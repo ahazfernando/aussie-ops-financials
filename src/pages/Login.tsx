@@ -55,11 +55,11 @@ const Login = () => {
         router.push('/dashboard');
       }
     } catch (error: any) {
-    toast({
+      toast({
         title: 'Sign in failed',
         description: error.message || `Failed to sign in with ${provider}`,
         variant: 'destructive',
-    });
+      });
     } finally {
       setIsLoading(false);
     }
@@ -187,7 +187,6 @@ const Login = () => {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-<<<<<<< HEAD
               <div className="mt-2 text-right">
                 <button
                   type="button"
@@ -197,8 +196,6 @@ const Login = () => {
                   Forgot password
                 </button>
               </div>
-=======
->>>>>>> 2087a01dfcf272865d1191dc6431c7de0e1b60e4
             </div>
 
             <Button 
@@ -219,15 +216,10 @@ const Login = () => {
               Sign up
             </button>
           </p>
-
         </div>
       </div>
     </div>
   );
 };
 
-<<<<<<< HEAD
 export default Login;
-=======
-export default Login;
->>>>>>> 2087a01dfcf272865d1191dc6431c7de0e1b60e4
