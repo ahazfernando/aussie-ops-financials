@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/contexts/AuthContext';
-import { Check, X, Loader2, Upload, FileText, Download } from 'lucide-react';
+import { Check, X, Loader2, Upload, FileText, Download, Search } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { storage, db } from '@/lib/firebase';
@@ -25,6 +25,8 @@ const Settings = () => {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, UserRole>>({});
   const [updatingRole, setUpdatingRole] = useState<Record<string, boolean>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedJobRole, setSelectedJobRole] = useState<string>('all');
 
   useEffect(() => {
     loadPendingUsers();
@@ -362,30 +364,78 @@ const Settings = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-6 flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search by name, email, or employee ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={selectedJobRole} onValueChange={setSelectedJobRole}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by job role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Job Roles</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="operationsstaff">Operations Staff</SelectItem>
+                <SelectItem value="itteam">IT Team</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {usersLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : allUsers.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No users found
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Employee ID</TableHead>
-                    <TableHead>Job Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Registered</TableHead>
-                    <TableHead>Approved By</TableHead>
-                    <TableHead>Contract</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {allUsers.map((user) => (
+          ) : (() => {
+            // Filter users based on search query and job role
+            const filteredUsers = allUsers.filter((user) => {
+              // Search filter
+              if (searchQuery.trim()) {
+                const query = searchQuery.toLowerCase();
+                const userName = (user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || '').toLowerCase();
+                const userEmail = (user.email || '').toLowerCase();
+                const employeeId = (user.employeeId || '').toLowerCase();
+                
+                if (!userName.includes(query) && !userEmail.includes(query) && !employeeId.includes(query)) {
+                  return false;
+                }
+              }
+              
+              // Job role filter
+              if (selectedJobRole !== 'all') {
+                if (user.role !== selectedJobRole) {
+                  return false;
+                }
+              }
+              
+              return true;
+            });
+
+            return filteredUsers.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                {searchQuery || selectedJobRole !== 'all' ? 'No users found matching your filters' : 'No users found'}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Employee ID</TableHead>
+                      <TableHead>Job Role</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Registered</TableHead>
+                      <TableHead>Approved By</TableHead>
+                      <TableHead>Contract</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredUsers.map((user) => (
                     <TableRow key={user.id}>
                       <TableCell className="font-medium">
                         {user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email}
@@ -486,10 +536,11 @@ const Settings = () => {
                       </TableCell>
                     </TableRow>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                  </TableBody>
+                </Table>
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 

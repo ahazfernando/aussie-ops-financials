@@ -14,6 +14,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Clock as ClockIcon, LogIn, LogOut, Calendar as CalendarIcon, Plus, Loader2, Users, Activity, Search, Edit, UserPlus, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { type DateRange } from 'react-day-picker';
 import { collection, query, where, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -92,7 +93,10 @@ const Clock = () => {
   const [allUsersEntries, setAllUsersEntries] = useState<TimeEntry[]>([]);
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
   const [loadingAdmin, setLoadingAdmin] = useState(false);
-  const [adminSelectedDate, setAdminSelectedDate] = useState<Date | undefined>(new Date());
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: new Date(),
+    to: new Date(),
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'most' | 'least' | 'none'>('none');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
@@ -143,7 +147,7 @@ const Clock = () => {
     if (user?.role === 'admin') {
       loadAllUsersEntries();
     }
-  }, [adminSelectedDate, user]);
+  }, [dateRange, user]);
 
   const checkCurrentStatus = async () => {
     if (!user) return;
@@ -1001,25 +1005,15 @@ const Clock = () => {
       const users = await getAllUsers();
       const userMap = new Map(users.map(u => [u.id, { name: u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email, email: u.email }]));
 
-      let q;
-      if (adminSelectedDate) {
-        const dateString = format(adminSelectedDate, 'yyyy-MM-dd');
-        q = query(
-          collection(db, 'timeEntries'),
-          where('dateString', '==', dateString)
-        );
-      } else {
-        // Get today's entries for all users
-        const today = new Date();
-        const dateString = format(today, 'yyyy-MM-dd');
-        q = query(
-          collection(db, 'timeEntries'),
-          where('dateString', '==', dateString)
-        );
-      }
+      // Get all entries and filter by date range client-side
+      // Firestore doesn't support range queries on dateString, so we fetch all and filter
+      const q = query(
+        collection(db, 'timeEntries'),
+        orderBy('dateString', 'desc')
+      );
 
       const querySnapshot = await getDocs(q);
-      const entries: TimeEntry[] = querySnapshot.docs.map((doc) => {
+      let entries: TimeEntry[] = querySnapshot.docs.map((doc) => {
         const data = getTimeEntryData(doc.data());
         const userInfo = userMap.get(data.userId) || { name: 'Unknown', email: 'N/A' };
         return {
@@ -1035,6 +1029,31 @@ const Clock = () => {
           updatedAt: data.updatedAt.toDate(),
         };
       });
+
+      // Filter by date range if specified
+      if (dateRange?.from || dateRange?.to) {
+        entries = entries.filter((entry) => {
+          const entryDate = new Date(entry.date);
+          entryDate.setHours(0, 0, 0, 0);
+          
+          if (dateRange.from && dateRange.to) {
+            const fromDate = new Date(dateRange.from);
+            fromDate.setHours(0, 0, 0, 0);
+            const toDate = new Date(dateRange.to);
+            toDate.setHours(23, 59, 59, 999);
+            return entryDate >= fromDate && entryDate <= toDate;
+          } else if (dateRange.from) {
+            const fromDate = new Date(dateRange.from);
+            fromDate.setHours(0, 0, 0, 0);
+            return entryDate >= fromDate;
+          } else if (dateRange.to) {
+            const toDate = new Date(dateRange.to);
+            toDate.setHours(23, 59, 59, 999);
+            return entryDate <= toDate;
+          }
+          return true;
+        });
+      }
 
       // Sort by date descending, then by user name
       entries.sort((a, b) => {
@@ -1126,7 +1145,7 @@ const Clock = () => {
   useEffect(() => {
     setIndividualEntriesPage(1);
     setMergedEntriesPage(1);
-  }, [searchQuery, selectedMonth, adminSelectedDate]);
+  }, [searchQuery, selectedMonth, dateRange]);
 
   const isAdmin = user?.role === 'admin';
 
@@ -1239,12 +1258,26 @@ const Clock = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold text-primary">
-              {format(currentTime, 'h:mm:ss a')}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Sri Lankan Time</p>
+                <div className="text-4xl font-bold text-primary">
+                  {format(currentTime, 'h:mm:ss a')}
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {format(currentTime, 'EEEE, MMMM dd, yyyy')}
+                </p>
+              </div>
+              <div className="border-l pl-4">
+                <p className="text-sm text-muted-foreground mb-1">Australian Time</p>
+                <div className="text-4xl font-bold text-primary">
+                  {format(new Date(currentTime.getTime() + (5 * 60 + 30) * 60 * 1000), 'h:mm:ss a')}
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {format(new Date(currentTime.getTime() + (5 * 60 + 30) * 60 * 1000), 'EEEE, MMMM dd, yyyy')}
+                </p>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              {format(currentTime, 'EEEE, MMMM dd, yyyy')}
-            </p>
           </CardContent>
         </Card>
 
@@ -1679,24 +1712,38 @@ const Clock = () => {
                         <PopoverTrigger asChild>
                           <Button variant="outline" size="sm">
                             <CalendarIcon className="h-4 w-4 mr-2" />
-                            {adminSelectedDate ? format(adminSelectedDate, 'MMM dd, yyyy') : 'Today'}
+                            {dateRange?.from ? (
+                              dateRange.to ? (
+                                `${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')}`
+                              ) : (
+                                format(dateRange.from, 'MMM dd, yyyy')
+                              )
+                            ) : (
+                              'Select date range'
+                            )}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="end">
                           <Calendar
-                            mode="single"
-                            selected={adminSelectedDate}
-                            onSelect={(date) => {
-                              setAdminSelectedDate(date || new Date());
-                            }}
-                            initialFocus
+                            mode="range"
+                            defaultMonth={dateRange?.from}
+                            selected={dateRange}
+                            onSelect={setDateRange}
+                            numberOfMonths={2}
+                            className="rounded-lg border shadow-sm"
                           />
                           <div className="p-3 border-t">
                             <Button
                               variant="outline"
                               size="sm"
                               className="w-full"
-                              onClick={() => setAdminSelectedDate(new Date())}
+                              onClick={() => {
+                                const today = new Date();
+                                setDateRange({
+                                  from: today,
+                                  to: today,
+                                });
+                              }}
                             >
                               Show Today
                             </Button>
