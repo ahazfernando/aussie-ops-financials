@@ -2,7 +2,11 @@
 /// <reference types="next/image-types/global" />
 /// <reference types="next/navigation-types/compat/navigation" />
 <<<<<<< HEAD
+<<<<<<< HEAD
 import "./.next/dev/types/routes.d.ts";
+=======
+import "./.next/types/routes.d.ts";
+>>>>>>> 97d6a264cdcc331665c968d47e2cffb5923fb5b7
 =======
 import "./.next/types/routes.d.ts";
 >>>>>>> 97d6a264cdcc331665c968d47e2cffb5923fb5b7

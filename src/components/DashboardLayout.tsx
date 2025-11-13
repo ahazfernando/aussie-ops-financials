@@ -29,7 +29,11 @@ import {
   LogOut,
   Settings,
 <<<<<<< HEAD
+<<<<<<< HEAD
   User
+=======
+  CheckSquare
+>>>>>>> 97d6a264cdcc331665c968d47e2cffb5923fb5b7
 =======
   CheckSquare
 >>>>>>> 97d6a264cdcc331665c968d47e2cffb5923fb5b7
@@ -38,7 +42,11 @@ import {
 const menuItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'operationsstaff', 'itteam'] },
 <<<<<<< HEAD
+<<<<<<< HEAD
   { title: 'Profile', url: '/profile', icon: User, roles: ['admin', 'operationsstaff', 'itteam'] },
+=======
+  { title: 'Tasks', url: '/tasks', icon: CheckSquare, roles: ['admin', 'operationsstaff', 'itteam'] },
+>>>>>>> 97d6a264cdcc331665c968d47e2cffb5923fb5b7
 =======
   { title: 'Tasks', url: '/tasks', icon: CheckSquare, roles: ['admin', 'operationsstaff', 'itteam'] },
 >>>>>>> 97d6a264cdcc331665c968d47e2cffb5923fb5b7
