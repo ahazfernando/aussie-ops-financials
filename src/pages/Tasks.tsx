@@ -11,10 +11,13 @@ import { DraggableTaskCard } from '@/components/tasks/DraggableTaskCard';
 import { DroppableColumn } from '@/components/tasks/DroppableColumn';
 import { TaskCard } from '@/components/tasks/TaskCard';
 import { TaskDetailsDialog } from '@/components/tasks/TaskDetailsDialog';
-import { getAllTasks, getTasksByUser, updateTaskStatus } from '@/lib/tasks';
+import { getAllTasks, getTasksByUser, updateTaskStatus, getCompletedTasks, getCompletedTasksByUser } from '@/lib/tasks';
 import { Task, TaskStatus } from '@/types/task';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, Plus, Search, CalendarIcon, X } from 'lucide-react';
+import { Plus, Search, CalendarIcon, X, CheckCircle2, Download } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { type DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
@@ -40,10 +43,16 @@ const Tasks = () => {
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
+  const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
+  const [loadingCompleted, setLoadingCompleted] = useState(false);
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  
+  // Completed tasks filter states
+  const [completedSearchQuery, setCompletedSearchQuery] = useState('');
+  const [completedDateRange, setCompletedDateRange] = useState<DateRange | undefined>();
 
   const isAdmin = user?.role === 'admin';
 
@@ -62,6 +71,7 @@ const Tasks = () => {
 
   useEffect(() => {
     loadTasks();
+    loadCompletedTasks();
   }, [user, filter]);
 
   const loadUsers = async () => {
@@ -104,6 +114,39 @@ const Tasks = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCompletedTasks = async () => {
+    try {
+      setLoadingCompleted(true);
+      let fetchedTasks: Task[];
+
+      if (isAdmin) {
+        fetchedTasks = await getCompletedTasks();
+      } else if (user) {
+        fetchedTasks = await getCompletedTasksByUser(user.id);
+      } else {
+        fetchedTasks = [];
+      }
+
+      // Sort by completion date (most recent first)
+      fetchedTasks.sort((a, b) => {
+        const aCompleted = a.statusHistory?.find(h => h.status === 'Complete')?.timestamp || a.updatedAt;
+        const bCompleted = b.statusHistory?.find(h => h.status === 'Complete')?.timestamp || b.updatedAt;
+        return bCompleted.getTime() - aCompleted.getTime();
+      });
+
+      // Limit to 10 most recent completed tasks
+      setCompletedTasks(fetchedTasks.slice(0, 10));
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load completed tasks',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingCompleted(false);
     }
   };
 
@@ -260,6 +303,90 @@ const Tasks = () => {
     setTaskDetailsOpen(true);
   };
 
+  const exportCompletedTasksToCSV = () => {
+    // Get filtered completed tasks
+    let filteredCompleted = [...completedTasks];
+
+    // Apply the same filters as the display
+    if (completedSearchQuery.trim()) {
+      const query = completedSearchQuery.toLowerCase();
+      filteredCompleted = filteredCompleted.filter(task => 
+        task.name.toLowerCase().includes(query) ||
+        task.description.toLowerCase().includes(query) ||
+        task.taskId.toLowerCase().includes(query) ||
+        task.assignedMemberNames?.some(name => name.toLowerCase().includes(query))
+      );
+    }
+
+    if (completedDateRange?.from || completedDateRange?.to) {
+      filteredCompleted = filteredCompleted.filter(task => {
+        const completionDate = task.statusHistory?.find(h => h.status === 'Complete')?.timestamp || task.updatedAt;
+        const taskDate = new Date(completionDate);
+        taskDate.setHours(0, 0, 0, 0);
+        
+        if (completedDateRange.from && completedDateRange.to) {
+          const fromDate = new Date(completedDateRange.from);
+          fromDate.setHours(0, 0, 0, 0);
+          const toDate = new Date(completedDateRange.to);
+          toDate.setHours(23, 59, 59, 999);
+          return taskDate >= fromDate && taskDate <= toDate;
+        } else if (completedDateRange.from) {
+          const fromDate = new Date(completedDateRange.from);
+          fromDate.setHours(0, 0, 0, 0);
+          return taskDate >= fromDate;
+        } else if (completedDateRange.to) {
+          const toDate = new Date(completedDateRange.to);
+          toDate.setHours(23, 59, 59, 999);
+          return taskDate <= toDate;
+        }
+        return true;
+      });
+    }
+
+    // Create CSV content
+    const headers = ['Task ID', 'Task Name', 'Description', 'Assigned To', 'Completed Date', 'Due Date', 'Created Date'];
+    const rows = filteredCompleted.map(task => {
+      const completionDate = task.statusHistory?.find(h => h.status === 'Complete')?.timestamp || task.updatedAt;
+      const assignedTo = task.assignedMemberNames?.join('; ') || 'Unassigned';
+      
+      // Escape commas and quotes in CSV values
+      const escapeCSV = (value: string) => {
+        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      return [
+        escapeCSV(task.taskId),
+        escapeCSV(task.name),
+        escapeCSV(task.description || ''),
+        escapeCSV(assignedTo),
+        format(completionDate, 'MMM dd, yyyy'),
+        format(task.date, 'MMM dd, yyyy'),
+        format(task.createdAt, 'MMM dd, yyyy'),
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `completed-tasks-${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: 'Export successful',
+      description: `Exported ${filteredCompleted.length} completed task(s) to CSV`,
+    });
+  };
+
   const columns: { status: TaskStatus; title: string; color: string }[] = [
     { status: 'New', title: 'New', color: 'bg-blue-500' },
     { status: 'Progress', title: 'In Progress', color: 'bg-yellow-500' },
@@ -268,8 +395,32 @@ const Tasks = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-32" />
+            <Skeleton className="h-5 w-64" />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <Skeleton className="h-10 flex-1 sm:max-w-sm" />
+          <Skeleton className="h-10 w-full sm:w-[300px]" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="space-y-4">
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-4 w-16" />
+              </div>
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, j) => (
+                  <Skeleton key={j} className="h-32 rounded-lg" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -419,6 +570,249 @@ const Tasks = () => {
         </DragOverlay>
       </DndContext>
 
+      {/* Completed Tasks Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-600 mb-2" />
+            Completed Tasks
+          </CardTitle>
+          <CardDescription>
+            Recently completed tasks - Click on a task to view details
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Filter Section for Completed Tasks */}
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center flex-1">
+              {/* Search Input */}
+              <div className="relative flex-1 w-full sm:max-w-sm">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search completed tasks..."
+                  value={completedSearchQuery}
+                  onChange={(e) => setCompletedSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              {/* Date Range Picker */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full sm:w-[300px] justify-start text-left font-normal",
+                      !completedDateRange && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {completedDateRange?.from ? (
+                      completedDateRange.to ? (
+                        <>
+                          {format(completedDateRange.from, "LLL dd, y")} -{" "}
+                          {format(completedDateRange.to, "LLL dd, y")}
+                        </>
+                      ) : (
+                        format(completedDateRange.from, "LLL dd, y")
+                      )
+                    ) : (
+                      <span>Filter by completion date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={completedDateRange?.from}
+                    selected={completedDateRange}
+                    onSelect={setCompletedDateRange}
+                    numberOfMonths={2}
+                  />
+                  {completedDateRange && (
+                    <div className="p-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setCompletedDateRange(undefined)}
+                      >
+                        Clear date filter
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+
+              {/* Clear Filters Button */}
+              {(completedSearchQuery.trim() !== '' || completedDateRange?.from || completedDateRange?.to) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setCompletedSearchQuery('');
+                    setCompletedDateRange(undefined);
+                  }}
+                  className="text-muted-foreground"
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Clear filters
+                </Button>
+              )}
+            </div>
+
+            {/* Export CSV Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCompletedTasksToCSV}
+              disabled={loadingCompleted || completedTasks.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+          </div>
+
+          {/* Filtered Completed Tasks */}
+          {(() => {
+            // Filter completed tasks based on search and date range
+            let filteredCompleted = [...completedTasks];
+
+            // Filter by search query
+            if (completedSearchQuery.trim()) {
+              const query = completedSearchQuery.toLowerCase();
+              filteredCompleted = filteredCompleted.filter(task => 
+                task.name.toLowerCase().includes(query) ||
+                task.description.toLowerCase().includes(query) ||
+                task.taskId.toLowerCase().includes(query) ||
+                task.assignedMemberNames?.some(name => name.toLowerCase().includes(query))
+              );
+            }
+
+            // Filter by date range (using completion date)
+            if (completedDateRange?.from || completedDateRange?.to) {
+              filteredCompleted = filteredCompleted.filter(task => {
+                const completionDate = task.statusHistory?.find(h => h.status === 'Complete')?.timestamp || task.updatedAt;
+                const taskDate = new Date(completionDate);
+                taskDate.setHours(0, 0, 0, 0);
+                
+                if (completedDateRange.from && completedDateRange.to) {
+                  const fromDate = new Date(completedDateRange.from);
+                  fromDate.setHours(0, 0, 0, 0);
+                  const toDate = new Date(completedDateRange.to);
+                  toDate.setHours(23, 59, 59, 999);
+                  return taskDate >= fromDate && taskDate <= toDate;
+                } else if (completedDateRange.from) {
+                  const fromDate = new Date(completedDateRange.from);
+                  fromDate.setHours(0, 0, 0, 0);
+                  return taskDate >= fromDate;
+                } else if (completedDateRange.to) {
+                  const toDate = new Date(completedDateRange.to);
+                  toDate.setHours(23, 59, 59, 999);
+                  return taskDate <= toDate;
+                }
+                return true;
+              });
+            }
+
+            return (
+              <>
+                {loadingCompleted ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-4 p-3 border rounded-lg">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-4 flex-1" />
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-4 w-24" />
+                      </div>
+                    ))}
+                  </div>
+                ) : filteredCompleted.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>
+                      {(completedSearchQuery.trim() !== '' || completedDateRange?.from || completedDateRange?.to)
+                        ? 'No completed tasks found matching your filters'
+                        : 'No completed tasks yet'}
+                    </p>
+                    {(completedSearchQuery.trim() !== '' || completedDateRange?.from || completedDateRange?.to) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setCompletedSearchQuery('');
+                          setCompletedDateRange(undefined);
+                        }}
+                        className="mt-4"
+                      >
+                        Clear filters
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Task ID</TableHead>
+                          <TableHead>Task Name</TableHead>
+                          <TableHead>Assigned To</TableHead>
+                          <TableHead>Completed Date</TableHead>
+                          <TableHead>Due Date</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredCompleted.map((task) => {
+                          const completionDate = task.statusHistory?.find(h => h.status === 'Complete')?.timestamp || task.updatedAt;
+                          return (
+                            <TableRow
+                              key={task.id}
+                              className="cursor-pointer hover:bg-accent"
+                              onClick={() => handleTaskCardClick(task)}
+                            >
+                              <TableCell className="font-mono text-sm">
+                                {task.taskId}
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {task.name}
+                              </TableCell>
+                              <TableCell>
+                                {task.assignedMemberNames && task.assignedMemberNames.length > 0 ? (
+                                  <div className="flex flex-col gap-1">
+                                    {task.assignedMemberNames.slice(0, 2).map((name, idx) => (
+                                      <span key={idx} className="text-sm">{name}</span>
+                                    ))}
+                                    {task.assignedMemberNames.length > 2 && (
+                                      <span className="text-xs text-muted-foreground">
+                                        +{task.assignedMemberNames.length - 2} more
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">Unassigned</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {format(completionDate, 'MMM dd, yyyy')}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {format(task.date, 'MMM dd, yyyy')}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
       {/* Task Details Dialog */}
       <TaskDetailsDialog
         task={selectedTask}
@@ -427,6 +821,7 @@ const Tasks = () => {
         users={users}
         onTaskUpdated={() => {
           loadTasks();
+          loadCompletedTasks();
           setTaskDetailsOpen(false);
         }}
       />

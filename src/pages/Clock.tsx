@@ -12,9 +12,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Clock as ClockIcon, LogIn, LogOut, Calendar as CalendarIcon, Plus, Loader2, Users, Activity, Search, Edit, UserPlus, Trash2 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { type DateRange } from 'react-day-picker';
+import { cn } from '@/lib/utils';
 import { collection, query, where, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -89,6 +91,9 @@ const Clock = () => {
   const [manualClockOut, setManualClockOut] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
+  // Date range for regular user time entries
+  const [userDateRange, setUserDateRange] = useState<DateRange | undefined>(undefined);
+  
   // Admin view states
   const [allUsersEntries, setAllUsersEntries] = useState<TimeEntry[]>([]);
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
@@ -100,6 +105,7 @@ const Clock = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'most' | 'least' | 'none'>('none');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [individualEntriesPage, setIndividualEntriesPage] = useState(1);
   const [mergedEntriesPage, setMergedEntriesPage] = useState(1);
   const [sessionDetailsOpen, setSessionDetailsOpen] = useState(false);
@@ -141,7 +147,7 @@ const Clock = () => {
         loadActiveUsers();
       }
     }
-  }, [user, selectedDate]);
+  }, [user, userDateRange]);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -205,23 +211,12 @@ const Clock = () => {
 
     try {
       setLoading(true);
-      let q;
-
-      if (selectedDate) {
-        // Use dateString to avoid composite index requirement
-        const dateString = format(selectedDate, 'yyyy-MM-dd');
-        q = query(
-          collection(db, 'timeEntries'),
-          where('userId', '==', user.id),
-          where('dateString', '==', dateString)
-        );
-      } else {
-        // Fetch all entries for user and sort client-side
-        q = query(
-          collection(db, 'timeEntries'),
-          where('userId', '==', user.id)
-        );
-      }
+      
+      // Fetch all entries for user (we'll filter by date range client-side)
+      const q = query(
+        collection(db, 'timeEntries'),
+        where('userId', '==', user.id)
+      );
 
       const querySnapshot = await getDocs(q);
       let entries: TimeEntry[] = querySnapshot.docs.map((doc) => {
@@ -237,6 +232,31 @@ const Clock = () => {
           updatedAt: data.updatedAt.toDate(),
         };
       });
+
+      // Filter by date range if specified
+      if (userDateRange?.from || userDateRange?.to) {
+        entries = entries.filter(entry => {
+          const entryDate = new Date(entry.date);
+          entryDate.setHours(0, 0, 0, 0);
+          
+          if (userDateRange.from && userDateRange.to) {
+            const fromDate = new Date(userDateRange.from);
+            fromDate.setHours(0, 0, 0, 0);
+            const toDate = new Date(userDateRange.to);
+            toDate.setHours(23, 59, 59, 999);
+            return entryDate >= fromDate && entryDate <= toDate;
+          } else if (userDateRange.from) {
+            const fromDate = new Date(userDateRange.from);
+            fromDate.setHours(0, 0, 0, 0);
+            return entryDate >= fromDate;
+          } else if (userDateRange.to) {
+            const toDate = new Date(userDateRange.to);
+            toDate.setHours(23, 59, 59, 999);
+            return entryDate <= toDate;
+          }
+          return true;
+        });
+      }
 
       // Sort by date descending (newest first)
       entries.sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -1467,8 +1487,23 @@ const Clock = () => {
               </CardHeader>
               <CardContent>
                 {loadingAdmin ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <div className="space-y-4">
+                    <div className="overflow-x-auto">
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-8 gap-4 pb-2 border-b">
+                          {Array.from({ length: 8 }).map((_, i) => (
+                            <Skeleton key={i} className="h-4 w-20" />
+                          ))}
+                        </div>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <div key={i} className="grid grid-cols-8 gap-4 py-2">
+                            {Array.from({ length: 8 }).map((_, j) => (
+                              <Skeleton key={j} className="h-8 w-full" />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 ) : (() => {
                   let filteredEntries = allUsersEntries.filter((entry) => {
@@ -1792,12 +1827,37 @@ const Clock = () => {
                           <SelectItem value="11">December</SelectItem>
                         </SelectContent>
                       </Select>
+                      <Select value={statusFilter} onValueChange={(value: 'all' | 'active' | 'completed') => setStatusFilter(value)}>
+                        <SelectTrigger className="w-[200px]">
+                          <SelectValue placeholder="Filter by status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All status</SelectItem>
+                          <SelectItem value="active">Active only</SelectItem>
+                          <SelectItem value="completed">Completed only</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </CardHeader>
                   <CardContent>
                     {loadingAdmin ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <div className="space-y-4">
+                        <div className="overflow-x-auto">
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-9 gap-4 pb-2 border-b">
+                              {Array.from({ length: 9 }).map((_, i) => (
+                                <Skeleton key={i} className="h-4 w-20" />
+                              ))}
+                            </div>
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <div key={i} className="grid grid-cols-9 gap-4 py-2">
+                                {Array.from({ length: 9 }).map((_, j) => (
+                                  <Skeleton key={j} className="h-8 w-full" />
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     ) : (() => {
                       const mergedEntries = mergeEntriesByUserAndDate(allUsersEntries);
@@ -1821,19 +1881,37 @@ const Clock = () => {
                           }
                         }
                         
+                        // Status filter
+                        if (statusFilter === 'active') {
+                          if (!entry.isActive) {
+                            return false;
+                          }
+                        } else if (statusFilter === 'completed') {
+                          if (entry.isActive) {
+                            return false;
+                          }
+                        }
+                        
                         return true;
                       });
 
-                      // Sort by hours
-                      if (sortOrder === 'most') {
-                        filteredEntries = [...filteredEntries].sort((a, b) => {
+                      // Sort: Active users first, then by hours if specified
+                      filteredEntries = [...filteredEntries].sort((a, b) => {
+                        // First, sort by active status (active users first)
+                        if (a.isActive !== b.isActive) {
+                          return a.isActive ? -1 : 1; // Active (true) comes before completed (false)
+                        }
+                        
+                        // If both have the same status, apply hour-based sorting if specified
+                        if (sortOrder === 'most') {
                           return b.totalHours - a.totalHours;
-                        });
-                      } else if (sortOrder === 'least') {
-                        filteredEntries = [...filteredEntries].sort((a, b) => {
+                        } else if (sortOrder === 'least') {
                           return a.totalHours - b.totalHours;
-                        });
-                      }
+                        }
+                        
+                        // If no sorting specified, maintain original order within each status group
+                        return 0;
+                      });
 
                       // Pagination
                       const itemsPerPage = 5;
@@ -1844,7 +1922,7 @@ const Clock = () => {
 
                       return filteredEntries.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-8">
-                          {searchQuery || selectedMonth !== 'all' ? 'No merged entries found matching your filters' : 'No merged entries found for this date'}
+                          {searchQuery || selectedMonth !== 'all' || statusFilter !== 'all' ? 'No merged entries found matching your filters' : 'No merged entries found for this date'}
                         </p>
                       ) : (
                         <div className="overflow-x-auto">
@@ -2057,8 +2135,23 @@ const Clock = () => {
               </CardHeader>
               <CardContent>
                 {loading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <div className="space-y-4">
+                    <div className="overflow-x-auto">
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-5 gap-4 pb-2 border-b">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Skeleton key={i} className="h-4 w-20" />
+                          ))}
+                        </div>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <div key={i} className="grid grid-cols-5 gap-4 py-2">
+                            {Array.from({ length: 5 }).map((_, j) => (
+                              <Skeleton key={j} className="h-8 w-full" />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 ) : timeEntries.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
@@ -2116,30 +2209,49 @@ const Clock = () => {
               </div>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className={cn(
+                      "justify-start text-left font-normal",
+                      !userDateRange && "text-muted-foreground"
+                    )}
+                  >
                     <CalendarIcon className="h-4 w-4 mr-2" />
-                    {selectedDate ? format(selectedDate, 'MMM dd, yyyy') : 'All Dates'}
+                    {userDateRange?.from ? (
+                      userDateRange.to ? (
+                        <>
+                          {format(userDateRange.from, 'MMM dd, yyyy')} - {format(userDateRange.to, 'MMM dd, yyyy')}
+                        </>
+                      ) : (
+                        format(userDateRange.from, 'MMM dd, yyyy')
+                      )
+                    ) : (
+                      'Filter by date range'
+                    )}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
                   <Calendar
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={(date) => {
-                      setSelectedDate(date);
-                    }}
+                    mode="range"
+                    defaultMonth={userDateRange?.from}
+                    selected={userDateRange}
+                    onSelect={setUserDateRange}
+                    numberOfMonths={2}
                     initialFocus
                   />
-                  <div className="p-3 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => setSelectedDate(undefined)}
-                    >
-                      Show All Dates
-                    </Button>
-                  </div>
+                  {userDateRange && (
+                    <div className="p-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setUserDateRange(undefined)}
+                      >
+                        Clear date filter
+                      </Button>
+                    </div>
+                  )}
                 </PopoverContent>
               </Popover>
             </div>

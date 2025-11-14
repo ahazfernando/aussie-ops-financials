@@ -10,7 +10,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from '@/components/ui/pagination';
-import { Calendar as CalendarIcon, Search, Loader2, LogIn, LogOut } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, LogIn, LogOut } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { TimeEntry, MergedTimeEntry, ActiveUser } from './types';
 import { formatDate, formatTime, mergeEntriesByUserAndDate } from './utils';
@@ -23,12 +24,14 @@ interface MergedEntriesTableProps {
   searchQuery: string;
   sortOrder: 'most' | 'least' | 'none';
   selectedMonth: string;
+  statusFilter: 'all' | 'active' | 'completed';
   currentPage: number;
   submitting: boolean;
   onDateChange: (date: Date | undefined) => void;
   onSearchChange: (query: string) => void;
   onSortChange: (order: 'most' | 'least' | 'none') => void;
   onMonthChange: (month: string) => void;
+  onStatusFilterChange: (filter: 'all' | 'active' | 'completed') => void;
   onPageChange: (page: number) => void;
   onShowSessions: (userId: string, userName: string, userEmail: string, date: Date) => void;
   onClockInUser: (userId: string, userName: string) => void;
@@ -43,12 +46,14 @@ export const MergedEntriesTable = ({
   searchQuery,
   sortOrder,
   selectedMonth,
+  statusFilter,
   currentPage,
   submitting,
   onDateChange,
   onSearchChange,
   onSortChange,
   onMonthChange,
+  onStatusFilterChange,
   onPageChange,
   onShowSessions,
   onClockInUser,
@@ -75,19 +80,37 @@ export const MergedEntriesTable = ({
       }
     }
     
+    // Status filter
+    if (statusFilter === 'active') {
+      if (!entry.isActive) {
+        return false;
+      }
+    } else if (statusFilter === 'completed') {
+      if (entry.isActive) {
+        return false;
+      }
+    }
+    
     return true;
   });
 
-  // Sort by hours
-  if (sortOrder === 'most') {
-    filteredEntries = [...filteredEntries].sort((a, b) => {
+  // Sort: Active users first, then by hours if specified
+  filteredEntries = [...filteredEntries].sort((a, b) => {
+    // First, sort by active status (active users first)
+    if (a.isActive !== b.isActive) {
+      return a.isActive ? -1 : 1; // Active (true) comes before completed (false)
+    }
+    
+    // If both have the same status, apply hour-based sorting if specified
+    if (sortOrder === 'most') {
       return b.totalHours - a.totalHours;
-    });
-  } else if (sortOrder === 'least') {
-    filteredEntries = [...filteredEntries].sort((a, b) => {
+    } else if (sortOrder === 'least') {
       return a.totalHours - b.totalHours;
-    });
-  }
+    }
+    
+    // If no sorting specified, maintain original order within each status group
+    return 0;
+  });
 
   // Pagination
   const itemsPerPage = 5;
@@ -174,16 +197,41 @@ export const MergedEntriesTable = ({
               <SelectItem value="11">December</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All status</SelectItem>
+              <SelectItem value="active">Active only</SelectItem>
+              <SelectItem value="completed">Completed only</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </CardHeader>
       <CardContent>
         {loadingAdmin ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="space-y-4">
+            <div className="overflow-x-auto">
+              <div className="space-y-3">
+                <div className="grid grid-cols-9 gap-4 pb-2 border-b">
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <Skeleton key={i} className="h-4 w-20" />
+                  ))}
+                </div>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="grid grid-cols-9 gap-4 py-2">
+                    {Array.from({ length: 9 }).map((_, j) => (
+                      <Skeleton key={j} className="h-8 w-full" />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : filteredEntries.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
-            {searchQuery || selectedMonth !== 'all' ? 'No merged entries found matching your filters' : 'No merged entries found for this date'}
+            {searchQuery || selectedMonth !== 'all' || statusFilter !== 'all' ? 'No merged entries found matching your filters' : 'No merged entries found for this date'}
           </p>
         ) : (
           <div className="overflow-x-auto">
