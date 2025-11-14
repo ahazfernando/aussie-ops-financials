@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { Task, TaskStatus } from '@/types/task';
+import { Task, TaskStatus, TaskImage } from '@/types/task';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { updateTaskStatus, updateTaskImages } from '@/lib/tasks';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { Image as ImageIcon, X, Loader2, Camera, GripVertical } from 'lucide-react';
+import { Image as ImageIcon, X, Loader2, Camera, GripVertical, Eye } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface TaskCardProps {
@@ -47,7 +47,10 @@ export function TaskCard({ task, onStatusChange, canEdit = false, onCardClick }:
 
     try {
       setIsUpdating(true);
-      await updateTaskStatus(task.id, newStatus);
+      await updateTaskStatus(task.id, newStatus, {
+        changedBy: user?.id,
+        changedByName: user?.name,
+      });
       toast({
         title: 'Status updated',
         description: `Task status changed to ${newStatus}`,
@@ -147,6 +150,10 @@ export function TaskCard({ task, onStatusChange, canEdit = false, onCardClick }:
       .slice(0, 2);
   };
 
+  const getImageUrl = (image: string | TaskImage): string => {
+    return typeof image === 'string' ? image : image.url;
+  };
+
   return (
     <>
       <Card 
@@ -198,11 +205,11 @@ export function TaskCard({ task, onStatusChange, canEdit = false, onCardClick }:
               {task.images.slice(0, 3).map((image, index) => (
                 <div key={index} className="relative group">
                   <img
-                    src={image}
+                    src={getImageUrl(image)}
                     alt={`Task image ${index + 1}`}
                     className="w-16 h-16 object-cover rounded cursor-pointer"
                     onClick={() => {
-                      setSelectedImage(image);
+                      setSelectedImage(getImageUrl(image));
                       setImageDialogOpen(true);
                     }}
                   />
@@ -271,6 +278,18 @@ export function TaskCard({ task, onStatusChange, canEdit = false, onCardClick }:
               </span>
             </div>
           )}
+
+          <div className="pt-2 border-t" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => onCardClick?.(task)}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              View Task
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -286,7 +305,7 @@ export function TaskCard({ task, onStatusChange, canEdit = false, onCardClick }:
             {task.images.map((image, index) => (
               <div key={index} className="relative group">
                 <img
-                  src={image}
+                  src={getImageUrl(image)}
                   alt={`Task image ${index + 1}`}
                   className="w-full h-48 object-cover rounded"
                 />
