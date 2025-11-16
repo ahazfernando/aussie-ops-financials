@@ -19,6 +19,7 @@ export async function sendClockInEmail({
   adminEmail,
 }: ClockInEmailParams): Promise<{ success: boolean; error?: string }> {
   try {
+    console.log('Attempting to send email to:', adminEmail);
     const response = await fetch('/api/send-clock-in-email', {
       method: 'POST',
       headers: {
@@ -35,10 +36,11 @@ export async function sendClockInEmail({
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Failed to send email:', data);
+      console.error('Failed to send email - API error:', data);
       return { success: false, error: data.error || 'Failed to send email' };
     }
 
+    console.log('Email sent successfully to:', adminEmail, data);
     return { success: true };
   } catch (error: any) {
     console.error('Error sending clock-in email:', error);
@@ -55,6 +57,13 @@ export async function sendClockInEmailsToAdmins(
   clockInTime: Date | string,
   adminEmails: string[]
 ): Promise<void> {
+  console.log('Sending clock-in emails to admins:', adminEmails);
+  
+  if (adminEmails.length === 0) {
+    console.warn('No admin emails found to send notifications to');
+    return;
+  }
+
   // Send emails to all admins in parallel (but don't wait for all to complete)
   const emailPromises = adminEmails.map((adminEmail) =>
     sendClockInEmail({
@@ -62,14 +71,24 @@ export async function sendClockInEmailsToAdmins(
       userEmail,
       clockInTime,
       adminEmail,
+    }).then((result) => {
+      if (!result.success) {
+        console.error(`Failed to send email to ${adminEmail}:`, result.error);
+      }
+      return result;
     }).catch((error) => {
-      console.error(`Failed to send email to ${adminEmail}:`, error);
+      console.error(`Error sending email to ${adminEmail}:`, error);
       // Don't throw - we want to try sending to all admins even if one fails
+      return { success: false, error: error.message };
     })
   );
 
   // Fire and forget - don't block the clock-in process
-  Promise.all(emailPromises).catch((error) => {
+  Promise.all(emailPromises).then((results) => {
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+    console.log(`Email sending complete: ${successCount} succeeded, ${failCount} failed`);
+  }).catch((error) => {
     console.error('Error sending some admin emails:', error);
   });
 }

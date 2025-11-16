@@ -6,7 +6,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { userName, userEmail, clockInTime } = body;
 
+    console.log('Email API called with:', { userName, userEmail, clockInTime });
+
     if (!userName || !userEmail || !clockInTime) {
+      console.error('Missing required fields:', { userName, userEmail, clockInTime });
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -20,6 +23,8 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    console.log('Resend API key found, from email:', process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev');
 
     // Initialize Resend only when needed and after checking for API key
     const resend = new Resend(process.env.RESEND_API_KEY);
@@ -46,6 +51,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('Sending email via Resend to:', adminEmail);
+    
     const { data, error } = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to: adminEmail,
@@ -88,13 +95,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      console.error('Resend error:', error);
+      console.error('Resend error:', JSON.stringify(error, null, 2));
       return NextResponse.json(
         { error: 'Failed to send email', details: error },
         { status: 500 }
       );
     }
 
+    console.log('Email sent successfully via Resend:', data);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     console.error('Email API error:', error);
