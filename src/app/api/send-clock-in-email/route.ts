@@ -99,11 +99,12 @@ export async function POST(request: NextRequest) {
       let errorDetails: any = {};
       try {
         if (typeof error === 'object' && error !== null) {
+          const errorAny = error as any;
           errorDetails = {
             message: error?.message || String(error),
             name: error?.name || 'Error',
             ...(error?.statusCode && { statusCode: error.statusCode }),
-            ...(error?.code && { code: error.code }),
+            ...(errorAny?.code && { code: errorAny.code }),
           };
           
           // Try to stringify the full error for logging
