@@ -24,6 +24,16 @@ export interface TaskFile {
   description?: string;
 }
 
+export interface Subtask {
+  id: string; // Unique ID for the subtask
+  description: string;
+  addedAt: Date; // Time when subtask was added
+  completed: boolean; // Whether the subtask is completed
+  completedAt?: Date; // Time when subtask was completed (if completed)
+  images?: (string | TaskImage)[]; // Array of Cloudinary image URLs or objects with url and description
+  files?: (string | TaskFile)[]; // Array of Cloudinary file URLs or objects with url, name and description
+}
+
 export interface Task {
   id: string;
   taskId: string; // User-defined task ID
@@ -51,6 +61,7 @@ export interface Task {
   parentTaskId?: string; // ID of the original recurring task (for tracking recurring instances)
   collaborative?: boolean; // Whether this is a collaborative task requiring all members to complete
   completedBy?: CompletedBy[]; // Array of users who have completed this collaborative task
+  subtasks?: Subtask[]; // Array of subtasks
 }
 
 export interface FirestoreTask {
@@ -88,6 +99,15 @@ export interface FirestoreTask {
     userId: string;
     userName: string;
     completedAt: any; // Firestore Timestamp
+  }>;
+  subtasks?: Array<{
+    id: string;
+    description: string;
+    addedAt: any; // Firestore Timestamp
+    completed: boolean;
+    completedAt?: any; // Firestore Timestamp
+    images?: (string | { url: string; description?: string })[];
+    files?: (string | { url: string; name: string; description?: string })[];
   }>;
 }
 

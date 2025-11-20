@@ -1,6 +1,6 @@
 import { collection, addDoc, updateDoc, doc, getDocs, query, where, orderBy, Timestamp, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Task, FirestoreTask, TaskStatus, StatusChange, TaskImage, TaskFile, CompletedBy } from '@/types/task';
+import { Task, FirestoreTask, TaskStatus, StatusChange, TaskImage, TaskFile, CompletedBy, Subtask } from '@/types/task';
 
 /**
  * Convert Firestore task to app Task
@@ -45,6 +45,42 @@ export function convertFirestoreTask(docData: any, docId: string): Task {
     completedAt: entry.completedAt?.toDate() || new Date(),
   }));
 
+  // Normalize subtasks: convert Firestore timestamps to Dates
+  const subtasks: Subtask[] = (docData.subtasks || []).map((subtask: any) => {
+    // Normalize subtask images
+    const subtaskImages: (string | TaskImage)[] = (subtask.images || []).map((img: any) => {
+      if (typeof img === 'string') {
+        return img;
+      }
+      return {
+        url: img.url || '',
+        description: img.description || '',
+      };
+    });
+
+    // Normalize subtask files
+    const subtaskFiles: (string | TaskFile)[] = (subtask.files || []).map((file: any) => {
+      if (typeof file === 'string') {
+        return file;
+      }
+      return {
+        url: file.url || '',
+        name: file.name || '',
+        description: file.description || '',
+      };
+    });
+
+    return {
+      id: subtask.id || '',
+      description: subtask.description || '',
+      addedAt: subtask.addedAt?.toDate() || new Date(),
+      completed: subtask.completed || false,
+      completedAt: subtask.completedAt?.toDate() || undefined,
+      images: subtaskImages.length > 0 ? subtaskImages : undefined,
+      files: subtaskFiles.length > 0 ? subtaskFiles : undefined,
+    };
+  });
+
   return {
     id: docId,
     taskId: docData.taskId || '',
@@ -76,6 +112,7 @@ export function convertFirestoreTask(docData: any, docId: string): Task {
     parentTaskId: docData.parentTaskId || undefined,
     collaborative: docData.collaborative || false,
     completedBy: completedBy.length > 0 ? completedBy : undefined,
+    subtasks: subtasks.length > 0 ? subtasks : undefined,
   };
 }
 
@@ -103,6 +140,7 @@ export async function createTask(taskData: {
   recurringEndDate?: Date;
   parentTaskId?: string;
   collaborative?: boolean;
+  subtasks?: Subtask[];
 }): Promise<string> {
   if (!db) {
     throw new Error('Firebase is not initialized. Please check your environment variables.');
@@ -144,6 +182,19 @@ export async function createTask(taskData: {
       parentTaskId: taskData.parentTaskId || null,
       collaborative: taskData.collaborative || false,
       completedBy: [],
+      subtasks: taskData.subtasks ? taskData.subtasks.map(subtask => {
+        const sanitizedSubtaskImages = subtask.images ? sanitizeImages(subtask.images) : null;
+        const sanitizedSubtaskFiles = subtask.files ? sanitizeFiles(subtask.files) : null;
+        return {
+          id: subtask.id,
+          description: subtask.description,
+          addedAt: Timestamp.fromDate(subtask.addedAt),
+          completed: subtask.completed,
+          completedAt: subtask.completedAt ? Timestamp.fromDate(subtask.completedAt) : null,
+          images: sanitizedSubtaskImages,
+          files: sanitizedSubtaskFiles,
+        };
+      }) : [],
     });
 
     return docRef.id;
@@ -343,6 +394,23 @@ export async function updateTaskStatus(
             ? (currentData.recurringEndDate.toDate ? currentData.recurringEndDate.toDate() : new Date(currentData.recurringEndDate))
             : undefined;
           
+          // Reset subtasks completion status when creating recurring instance
+          const recurringSubtasks = currentData.subtasks ? currentData.subtasks.map((subtask: any) => {
+            const subtaskAddedAt = subtask.addedAt?.toDate ? subtask.addedAt.toDate() : new Date(subtask.addedAt);
+            // Preserve images and files but reset completion
+            const subtaskImages = subtask.images || [];
+            const subtaskFiles = subtask.files || [];
+            return {
+              id: `${subtask.id}-${Date.now()}`,
+              description: subtask.description || '',
+              addedAt: new Date(), // Reset to current date
+              completed: false, // Reset completion status
+              completedAt: undefined, // Clear completion time
+              images: subtaskImages.length > 0 ? subtaskImages : undefined,
+              files: subtaskFiles.length > 0 ? subtaskFiles : undefined,
+            };
+          }) : [];
+
           // Create new task with same scope but new ID and current date
           const newTaskData = {
             taskId: newTaskId,
@@ -364,6 +432,7 @@ export async function updateTaskStatus(
             recurringEndDate: recurringEndDate,
             parentTaskId: parentId, // Link to the original recurring task
             collaborative: currentData.collaborative || false,
+            subtasks: recurringSubtasks,
           };
 
           await createTask(newTaskData);
@@ -457,6 +526,37 @@ export async function updateTaskFiles(taskId: string, files: (string | TaskFile)
 }
 
 /**
+ * Update task subtasks
+ */
+export async function updateTaskSubtasks(taskId: string, subtasks: Subtask[]): Promise<void> {
+  if (!db) {
+    throw new Error('Firebase is not initialized. Please check your environment variables.');
+  }
+  try {
+    const subtasksData = subtasks.map(subtask => {
+      const sanitizedSubtaskImages = subtask.images ? sanitizeImages(subtask.images) : null;
+      const sanitizedSubtaskFiles = subtask.files ? sanitizeFiles(subtask.files) : null;
+      return {
+        id: subtask.id,
+        description: subtask.description,
+        addedAt: Timestamp.fromDate(subtask.addedAt),
+        completed: subtask.completed,
+        completedAt: subtask.completedAt ? Timestamp.fromDate(subtask.completedAt) : null,
+        images: sanitizedSubtaskImages,
+        files: sanitizedSubtaskFiles,
+      };
+    });
+    await updateDoc(doc(db, 'tasks', taskId), {
+      subtasks: subtasksData,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error('Error updating task subtasks:', error);
+    throw error;
+  }
+}
+
+/**
  * Update task details
  */
 export async function updateTask(
@@ -474,6 +574,7 @@ export async function updateTask(
     actualKpi?: number;
     eta?: Date;
     time?: string;
+    subtasks?: Subtask[];
   }
 ): Promise<void> {
   if (!db) {
@@ -499,6 +600,22 @@ export async function updateTask(
     if (taskData.files !== undefined) {
       const sanitizedFiles = sanitizeFiles(taskData.files);
       updateData.files = sanitizedFiles;
+    }
+    
+    if (taskData.subtasks !== undefined) {
+      updateData.subtasks = taskData.subtasks.map(subtask => {
+        const sanitizedSubtaskImages = subtask.images ? sanitizeImages(subtask.images) : null;
+        const sanitizedSubtaskFiles = subtask.files ? sanitizeFiles(subtask.files) : null;
+        return {
+          id: subtask.id,
+          description: subtask.description,
+          addedAt: Timestamp.fromDate(subtask.addedAt),
+          completed: subtask.completed,
+          completedAt: subtask.completedAt ? Timestamp.fromDate(subtask.completedAt) : null,
+          images: sanitizedSubtaskImages,
+          files: sanitizedSubtaskFiles,
+        };
+      });
     }
     
     await updateDoc(doc(db, 'tasks', taskId), updateData);
