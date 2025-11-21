@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import { collection, query, where, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { sendClockInEmailsToAdmins } from '@/lib/email';
-import { getAllLocationData } from '@/lib/location';
+import { getAllLocationData, LocationData, SystemLocationData } from '@/lib/location';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -77,6 +77,8 @@ interface MergedTimeEntry {
   totalHours: number;
   sessionCount: number;
   isActive: boolean;
+  clockInLocation?: LocationData;
+  clockInSystemLocation?: SystemLocationData;
 }
 
 interface FirestoreTimeEntry {
