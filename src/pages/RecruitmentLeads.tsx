@@ -341,18 +341,26 @@ const RecruitmentLeads = () => {
       search?: string;
     } = {};
     
-    // Type guard: check if status is a valid LeadStatus (not empty string)
+    // Type guards: check if values are valid (not empty string)
     const isValidStatus = (status: LeadStatus | ''): status is LeadStatus => {
       return status !== '';
+    };
+    
+    const isValidPlatform = (platform: Platform | ''): platform is Platform => {
+      return platform !== '';
+    };
+    
+    const isValidPriority = (priority: LeadPriority | ''): priority is LeadPriority => {
+      return priority !== '';
     };
     
     if (isValidStatus(filters.status)) {
       cleaned.status = filters.status;
     }
-    if (filters.platform && filters.platform !== '') {
+    if (isValidPlatform(filters.platform)) {
       cleaned.platform = filters.platform;
     }
-    if (filters.priority && filters.priority !== '') {
+    if (isValidPriority(filters.priority)) {
       cleaned.priority = filters.priority;
     }
     if (filters.assignedTo && filters.assignedTo !== '') {
