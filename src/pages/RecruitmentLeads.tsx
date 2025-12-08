@@ -704,11 +704,8 @@ const RecruitmentLeads = () => {
         userId: user.id,
         userName: user.name || 'Unknown',
         metadata: {
-          previousStatus: previousStatus || null,
+          oldStatus: previousStatus,
           newStatus,
-          movedBy: user.name || 'Unknown',
-          movedByUserId: user.id,
-          movedAt: new Date().toISOString(),
         },
       });
       
