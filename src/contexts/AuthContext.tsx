@@ -358,6 +358,8 @@ export function useAuth() {
       signInWithGithub: async () => {},
       approveUser: async () => {},
       rejectUser: async () => {},
+      terminateUser: async () => {},
+      reapproveTerminatedUser: async () => {},
       getPendingUsers: async () => [],
       getAllUsers: async () => [],
       isLoading: true,
