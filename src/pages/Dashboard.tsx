@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Clock, Star, Users, Calendar, TrendingUp, CheckSquare, ArrowRight, AlertCircle, Bell, Plus, LogOut, LogIn } from 'lucide-react';
+import { Clock, Star, Users, Calendar, TrendingUp, CheckSquare, ArrowRight, AlertCircle, Bell, Plus, LogOut, LogIn, UserCircle, DollarSign, TrendingDown, FileText, Wallet, Loader2 } from 'lucide-react';
 import { getTasksByUser, getCompletedTasks, getCompletedTasksByUser } from '@/lib/tasks';
 import { Task } from '@/types/task';
 import { getRemindersByUser } from '@/lib/reminders';
@@ -19,6 +19,16 @@ import { doc, getDoc, setDoc, collection, query, where, getDocs, Timestamp, orde
 import { db } from '@/lib/firebase';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { getAllClients } from '@/lib/clients';
+import { getAllTransactions, calculateFinancialSummary } from '@/lib/financials';
+import { 
+  CashFlowTrends, 
+  CashFlowDistribution, 
+  MonthlyNetCashFlow, 
+  prepareChartData 
+} from '@/components/CASH_FLOW_CHARTS_COMPONENTS';
+import { Bar, BarChart, CartesianGrid, XAxis, Pie, PieChart } from 'recharts';
+import { ChartConfig, ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 
 const Dashboard = () => {
   const { user, getAllUsers } = useAuth();
@@ -42,11 +52,22 @@ const Dashboard = () => {
   });
   const [loadingActivity, setLoadingActivity] = useState(true);
   const [kpiData, setKpiData] = useState({
-    clockInToday: { value: '--', loading: true },
-    weeklyRating: { value: '--', loading: true },
-    pendingLeaveRequests: { value: '0', loading: true },
-    completedTasks: { value: '0', loading: true },
+    totalClients: { value: '0', loading: true },
+    totalRevenue: { value: '$0', loading: true },
+    lossesPayables: { value: '$0', loading: true },
   });
+  const [chartData, setChartData] = useState<any>(null);
+  const [loadingCharts, setLoadingCharts] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [pendingRevenue, setPendingRevenue] = useState(0);
+  const [totalExpenses, setTotalExpenses] = useState(0);
+  const [pendingExpenses, setPendingExpenses] = useState(0);
+  const [profit, setProfit] = useState(0);
+  const [monthlyDataArray, setMonthlyDataArray] = useState<Array<{ month: string; revenue: number; expenses: number }>>([]);
+  const [statusData, setStatusData] = useState<Array<{ status: string; count: number; fill: string }>>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [payrolls, setPayrolls] = useState<any[]>([]);
 
   useEffect(() => {
     if (user) {
@@ -56,8 +77,95 @@ const Dashboard = () => {
       loadBusyStatus();
       loadRecentActivity();
       loadKPIData();
+      loadFinancialData();
     }
   }, [user]);
+
+  const loadFinancialData = async () => {
+    if (!user || user.role !== 'admin') {
+      setLoadingCharts(false);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setLoadingCharts(true);
+      const transactions = await getAllTransactions();
+      const summary = calculateFinancialSummary(transactions);
+      
+      // Calculate totals
+      setTotalRevenue(summary.totalIncome);
+      setTotalExpenses(summary.totalExpenses);
+      setProfit(summary.totalIncome - summary.totalExpenses);
+      
+      // For now, pending revenue/expenses are 0 (can be calculated from unpaid invoices/expenses if needed)
+      setPendingRevenue(0);
+      setPendingExpenses(0);
+      
+      // Prepare monthly data for charts
+      const preparedData = prepareChartData(transactions);
+      setChartData(preparedData);
+      
+      // Prepare monthly data array for bar chart
+      const monthlyData = preparedData.monthlyData.map(m => ({
+        month: m.month,
+        revenue: m.income,
+        expenses: m.expenses,
+      }));
+      setMonthlyDataArray(monthlyData);
+      
+      // Prepare status data for pie chart (using transaction types as status)
+      const inflowCount = transactions.filter(t => t.type === 'INFLOW').length;
+      const outflowCount = transactions.filter(t => t.type === 'OUTFLOW').length;
+      setStatusData([
+        { status: 'Income', count: inflowCount, fill: 'hsl(var(--chart-1))' },
+        { status: 'Expenses', count: outflowCount, fill: 'hsl(var(--chart-2))' },
+      ]);
+      
+      // Set invoices and payrolls (empty for now, can be populated if invoice/payroll system exists)
+      setInvoices([]);
+      setPayrolls([]);
+      
+    } catch (error) {
+      console.error('Error loading financial data:', error);
+    } finally {
+      setLoadingCharts(false);
+      setIsLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  // Chart configurations
+  const cashFlowConfig = {
+    revenue: {
+      label: "Revenue",
+      color: "hsl(142, 76%, 36%)",
+    },
+    expenses: {
+      label: "Expenses",
+      color: "hsl(217, 91%, 60%)",
+    },
+  } satisfies ChartConfig;
+
+  const statusConfig = {
+    income: {
+      label: "Income",
+      color: "hsl(142, 76%, 36%)",
+    },
+    expenses: {
+      label: "Expenses",
+      color: "hsl(217, 91%, 60%)",
+    },
+  } satisfies ChartConfig;
 
   const loadProfilePhoto = async () => {
     if (!user) return;
@@ -179,17 +287,93 @@ const Dashboard = () => {
   };
 
   const loadKPIData = async () => {
-    if (!user) return;
+    if (!user || user.role !== 'admin') {
+      // Set loading to false for non-admin users
+      setKpiData({
+        totalClients: { value: '0', loading: false },
+        totalRevenue: { value: '$0', loading: false },
+        lossesPayables: { value: '$0', loading: false },
+      });
+      return;
+    }
     
     try {
       await Promise.all([
-        loadClockInToday(),
-        loadWeeklyRating(),
-        loadPendingLeaveRequests(),
-        loadCompletedTasks(),
+        loadTotalClients(),
+        loadTotalRevenue(),
+        loadLossesPayables(),
       ]);
     } catch (error) {
       console.error('Error loading KPI data:', error);
+    }
+  };
+
+  const loadTotalClients = async () => {
+    try {
+      setKpiData(prev => ({ ...prev, totalClients: { ...prev.totalClients, loading: true } }));
+      const clients = await getAllClients();
+      setKpiData(prev => ({ 
+        ...prev, 
+        totalClients: { value: clients.length.toString(), loading: false } 
+      }));
+    } catch (error) {
+      console.error('Error loading total clients:', error);
+      setKpiData(prev => ({ 
+        ...prev, 
+        totalClients: { value: 'Error', loading: false } 
+      }));
+    }
+  };
+
+  const loadTotalRevenue = async () => {
+    try {
+      setKpiData(prev => ({ ...prev, totalRevenue: { ...prev.totalRevenue, loading: true } }));
+      const transactions = await getAllTransactions();
+      const summary = calculateFinancialSummary(transactions);
+      const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('en-AU', {
+          style: 'currency',
+          currency: 'AUD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(amount);
+      };
+      setKpiData(prev => ({ 
+        ...prev, 
+        totalRevenue: { value: formatCurrency(summary.totalIncome), loading: false } 
+      }));
+    } catch (error) {
+      console.error('Error loading total revenue:', error);
+      setKpiData(prev => ({ 
+        ...prev, 
+        totalRevenue: { value: 'Error', loading: false } 
+      }));
+    }
+  };
+
+  const loadLossesPayables = async () => {
+    try {
+      setKpiData(prev => ({ ...prev, lossesPayables: { ...prev.lossesPayables, loading: true } }));
+      const transactions = await getAllTransactions();
+      const summary = calculateFinancialSummary(transactions);
+      const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('en-AU', {
+          style: 'currency',
+          currency: 'AUD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(amount);
+      };
+      setKpiData(prev => ({ 
+        ...prev, 
+        lossesPayables: { value: formatCurrency(summary.totalExpenses), loading: false } 
+      }));
+    } catch (error) {
+      console.error('Error loading losses/payables:', error);
+      setKpiData(prev => ({ 
+        ...prev, 
+        lossesPayables: { value: 'Error', loading: false } 
+      }));
     }
   };
 
@@ -520,44 +704,37 @@ const Dashboard = () => {
     adminOnly?: boolean;
   }> = [
     { 
-      title: 'Clock In Today', 
-      value: kpiData.clockInToday.value, 
-      loading: kpiData.clockInToday.loading,
-      icon: Clock, 
+      title: 'Total Clients', 
+      value: kpiData.totalClients.value, 
+      loading: kpiData.totalClients.loading,
+      icon: UserCircle, 
       gradient: 'from-blue-500 via-blue-600 to-indigo-600',
       iconBg: 'bg-blue-500/10',
       iconColor: 'text-blue-500',
-      borderColor: 'border-blue-500/20'
+      borderColor: 'border-blue-500/20',
+      adminOnly: true
     },
     { 
-      title: 'This Week Rating', 
-      value: kpiData.weeklyRating.value, 
-      loading: kpiData.weeklyRating.loading,
-      icon: Star, 
-      gradient: 'from-blue-500 via-blue-600 to-indigo-600',
-      iconBg: 'bg-blue-500/10',
-      iconColor: 'text-blue-500',
-      borderColor: 'border-blue-500/20'
+      title: 'Total Revenue', 
+      value: kpiData.totalRevenue.value, 
+      loading: kpiData.totalRevenue.loading,
+      icon: DollarSign, 
+      gradient: 'from-green-500 via-green-600 to-emerald-600',
+      iconBg: 'bg-green-500/10',
+      iconColor: 'text-green-500',
+      borderColor: 'border-green-500/20',
+      adminOnly: true
     },
     { 
-      title: 'Leave Requests', 
-      value: kpiData.pendingLeaveRequests.value, 
-      loading: kpiData.pendingLeaveRequests.loading,
-      icon: Calendar, 
-      gradient: 'from-blue-500 via-blue-600 to-indigo-600',
-      iconBg: 'bg-blue-500/10',
-      iconColor: 'text-blue-500',
-      borderColor: 'border-blue-500/20'
-    },
-    { 
-      title: 'Tasks Completed', 
-      value: kpiData.completedTasks.value, 
-      loading: kpiData.completedTasks.loading,
-      icon: CheckSquare, 
-      gradient: 'from-blue-500 via-blue-600 to-indigo-600',
-      iconBg: 'bg-blue-500/10',
-      iconColor: 'text-blue-500',
-      borderColor: 'border-blue-500/20'
+      title: 'Losses / Payables', 
+      value: kpiData.lossesPayables.value, 
+      loading: kpiData.lossesPayables.loading,
+      icon: TrendingDown, 
+      gradient: 'from-red-500 via-red-600 to-rose-600',
+      iconBg: 'bg-red-500/10',
+      iconColor: 'text-red-500',
+      borderColor: 'border-red-500/20',
+      adminOnly: true
     },
   ];
 
@@ -583,6 +760,222 @@ const Dashboard = () => {
       .slice(0, 2);
   };
 
+  // Admin Dashboard with new UI
+  if (user?.role === 'admin') {
+    return (
+      <div className="space-y-6 sm:space-y-8">
+        {/* Modern Header Section */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-500/10 via-gray-500/5 to-background border border-slate-500/20 p-6 sm:p-8">
+          <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+          <div className="relative space-y-2">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+              Dashboard
+            </h2>
+            <p className="text-sm sm:text-base text-muted-foreground">Financial overview and key metrics at a glance</p>
+          </div>
+        </div>
+
+        {/* Stats Cards Grid */}
+        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {isLoading ? (
+            <>
+              {[1, 2, 3].map((i) => (
+                <Card key={i} className="relative overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/30 dark:to-slate-900/20 border-2 border-slate-200 dark:border-slate-900/50 shadow-xl p-0 rounded-2xl">
+                  <CardHeader className="relative px-6 pt-6">
+                    <Skeleton className="h-16 w-16 rounded-xl mb-4" />
+                    <Skeleton className="h-4 w-32 mb-2" />
+                    <Skeleton className="h-8 w-40" />
+                  </CardHeader>
+                  <CardContent className="bg-slate-50/50 dark:bg-slate-950/20 rounded-b-2xl px-6 py-4 border-t border-slate-200 dark:border-slate-900/50">
+                    <Skeleton className="h-3 w-24" />
+                  </CardContent>
+                </Card>
+              ))}
+            </>
+          ) : (
+            <>
+              {/* Total Revenue Card */}
+              <Card className="relative overflow-hidden bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-950/30 dark:to-green-900/20 border-2 border-green-200 dark:border-green-900/50 shadow-xl hover:shadow-2xl transition-all duration-300 p-0 rounded-2xl group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-green-400/20 rounded-full -mr-16 -mt-16 group-hover:bg-green-400/30 transition-colors"></div>
+                <CardHeader className="relative px-6 pt-6">
+                  <div className="flex items-start justify-between">
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-green-500 to-green-600 shadow-lg">
+                      <DollarSign className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+                  <CardTitle className="text-sm font-semibold mt-4 text-muted-foreground uppercase tracking-wide">Total Revenue</CardTitle>
+                  <div className="text-3xl font-bold text-green-700 dark:text-green-400 mt-2">
+                    {formatCurrency(totalRevenue)}
+                  </div>
+                </CardHeader>
+                <CardContent className="bg-green-50/50 dark:bg-green-950/20 rounded-b-2xl px-6 py-4 border-t border-green-200 dark:border-green-900/50">
+                  <p className="text-xs text-muted-foreground font-medium">
+                    {formatCurrency(pendingRevenue)} pending
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Total Expenses Card */}
+              <Card className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 border-2 border-blue-200 dark:border-blue-900/50 shadow-xl hover:shadow-2xl transition-all duration-300 p-0 rounded-2xl group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-400/20 rounded-full -mr-16 -mt-16 group-hover:bg-blue-400/30 transition-colors"></div>
+                <CardHeader className="relative px-6 pt-6">
+                  <div className="flex items-start justify-between">
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
+                      <Wallet className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+                  <CardTitle className="text-sm font-semibold mt-4 text-muted-foreground uppercase tracking-wide">Total Expenses</CardTitle>
+                  <div className="text-3xl font-bold text-blue-700 dark:text-blue-400 mt-2">
+                    {formatCurrency(totalExpenses)}
+                  </div>
+                </CardHeader>
+                <CardContent className="bg-blue-50/50 dark:bg-blue-950/20 rounded-b-2xl px-6 py-4 border-t border-blue-200 dark:border-blue-900/50">
+                  <p className="text-xs text-muted-foreground font-medium">
+                    {formatCurrency(pendingExpenses)} pending
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Net Profit Card */}
+              <Card className={`relative overflow-hidden bg-gradient-to-br ${profit >= 0 ? 'from-green-50 to-emerald-100/50 dark:from-green-950/30 dark:to-emerald-900/20 border-2 border-green-200 dark:border-green-900/50' : 'from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 border-2 border-blue-200 dark:border-blue-900/50'} shadow-xl hover:shadow-2xl transition-all duration-300 p-0 rounded-2xl group`}>
+                <div className={`absolute top-0 right-0 w-32 h-32 ${profit >= 0 ? 'bg-green-400/20 group-hover:bg-green-400/30' : 'bg-blue-400/20 group-hover:bg-blue-400/30'} rounded-full -mr-16 -mt-16 transition-colors`}></div>
+                <CardHeader className="relative px-6 pt-6">
+                  <div className="flex items-start justify-between">
+                    <div className={`p-3 rounded-xl bg-gradient-to-br ${profit >= 0 ? 'from-green-500 to-green-600' : 'from-blue-500 to-blue-600'} shadow-lg`}>
+                      <TrendingUp className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+                  <CardTitle className="text-sm font-semibold mt-4 text-muted-foreground uppercase tracking-wide">Net Profit</CardTitle>
+                  <div className={`text-3xl font-bold mt-2 ${profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-blue-700 dark:text-blue-400'}`}>
+                    {formatCurrency(profit)}
+                  </div>
+                </CardHeader>
+                <CardContent className={`${profit >= 0 ? 'bg-green-50/50 dark:bg-green-950/20 border-t border-green-200 dark:border-green-900/50' : 'bg-blue-50/50 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-900/50'} rounded-b-2xl px-6 py-4`}>
+                  <p className="text-xs text-muted-foreground font-medium">Cash flow method</p>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
+          {/* Monthly Cash Flow Chart */}
+          <Card className="border-2 shadow-xl">
+            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/5 to-muted/30 border-b-2 pb-4">
+              <CardTitle className="text-xl font-bold">Monthly Cash Flow</CardTitle>
+              <CardDescription className="text-sm">Revenue vs Expenses (Cash Flow Method)</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+              {isLoading ? (
+                <div className="space-y-4 h-[300px]">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-[250px] w-full rounded-lg" />
+                </div>
+              ) : (
+                <ChartContainer config={cashFlowConfig}>
+                  <BarChart accessibilityLayer data={monthlyDataArray.length > 0 ? monthlyDataArray : [{ month: "No Data", revenue: 0, expenses: 0 }]}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis
+                      dataKey="month"
+                      tickLine={false}
+                      tickMargin={10}
+                      axisLine={false}
+                      className="text-xs"
+                    />
+                    <ChartTooltip 
+                      content={
+                        <ChartTooltipContent 
+                          hideLabel 
+                          formatter={(value) => formatCurrency(Number(value))}
+                          className="rounded-lg border shadow-lg"
+                        />
+                      } 
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar
+                      dataKey="revenue"
+                      stackId="a"
+                      fill="var(--color-revenue)"
+                      radius={[0, 0, 8, 8]}
+                      className="hover:opacity-80 transition-opacity"
+                    />
+                    <Bar
+                      dataKey="expenses"
+                      stackId="a"
+                      fill="var(--color-expenses)"
+                      radius={[8, 8, 0, 0]}
+                      className="hover:opacity-80 transition-opacity"
+                    />
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+            <CardFooter className="bg-muted/30 dark:bg-muted/20 flex-col items-start gap-2 text-sm border-t">
+              <div className="flex gap-2 leading-none font-bold">
+                Net Profit: <span className={profit >= 0 ? "text-green-600 dark:text-green-400" : "text-blue-600 dark:text-blue-400"}>
+                  {formatCurrency(profit)}
+                </span>
+                {profit >= 0 ? (
+                  <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+                ) : (
+                  <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400 rotate-180" />
+                )}
+              </div>
+              <div className="text-muted-foreground leading-none text-xs">
+                Based on received payments
+              </div>
+            </CardFooter>
+          </Card>
+
+          {/* Transaction Status Distribution Chart */}
+          <Card className="flex flex-col border-2 shadow-xl">
+            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/5 to-muted/30 border-b-2 items-center pb-4">
+              <CardTitle className="text-xl font-bold">Transaction Status Distribution</CardTitle>
+              <CardDescription className="text-sm">Income vs Expenses breakdown</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1 pb-0 pt-6">
+              {isLoading ? (
+                <div className="space-y-4 h-[300px] flex items-center justify-center">
+                  <Skeleton className="h-[250px] w-[250px] rounded-full" />
+                </div>
+              ) : (
+                <ChartContainer
+                  config={statusConfig}
+                  className="mx-auto aspect-square max-h-[300px]"
+                >
+                  <PieChart>
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent hideLabel className="rounded-lg border shadow-lg" />}
+                    />
+                    <Pie 
+                      data={statusData.length > 0 ? statusData : [{ status: 'No Data', count: 1, fill: 'hsl(var(--muted))' }]} 
+                      dataKey="count" 
+                      nameKey="status"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      innerRadius={40}
+                      paddingAngle={2}
+                      className="hover:opacity-80 transition-opacity"
+                    />
+                  </PieChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+            <CardFooter className="bg-muted/30 dark:bg-muted/20 flex-col gap-2 text-sm border-t">
+              <div className="text-muted-foreground leading-none text-xs font-medium">
+                Total <span className="font-bold text-foreground">{statusData.reduce((sum, s) => sum + s.count, 0)}</span> transactions tracked
+              </div>
+            </CardFooter>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Non-admin users see the old dashboard
   return (
     <div className="space-y-4 sm:space-y-6 md:space-y-8">
       {/* Header Section with Modern Design */}
@@ -668,6 +1061,28 @@ const Dashboard = () => {
           </Card>
         ))}
       </div>
+
+      {/* Cash Flow Charts - Admin Only */}
+      {user?.role === 'admin' && (
+        <div className="grid gap-6 grid-cols-1 md:grid-cols-3">
+          <CashFlowTrends 
+            monthlyData={chartData?.monthlyData} 
+            isLoading={loadingCharts} 
+            hasData={!!chartData && chartData.monthlyData.length > 0} 
+          />
+          <CashFlowDistribution 
+            totalIncome={chartData?.totalIncome} 
+            totalExpenses={chartData?.totalExpenses} 
+            isLoading={loadingCharts} 
+            hasData={!!chartData && (chartData.totalIncome > 0 || chartData.totalExpenses > 0)} 
+          />
+          <MonthlyNetCashFlow 
+            monthlyData={chartData?.monthlyData} 
+            isLoading={loadingCharts} 
+            hasData={!!chartData && chartData.monthlyData.length > 0} 
+          />
+        </div>
+      )}
 
       <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
         <Card className="border-border/50 transition-smooth overflow-hidden group">

@@ -60,7 +60,7 @@ const Reset = () => {
 
     return (
         <div className="min-h-screen flex bg-white dark:bg-black">
-            <ThemeToggle />
+            <ThemeToggle className="fixed top-4 right-4 z-50" />
             <div className="hidden lg:flex lg:w-1/2 relative bg-white dark:bg-black">
                 <div className="absolute top-4 left-4 bottom-4 right-0">
                     <Image

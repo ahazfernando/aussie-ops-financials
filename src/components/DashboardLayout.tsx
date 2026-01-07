@@ -18,41 +18,26 @@ import {
 } from '@/components/ui/sidebar';
 import { NavLink } from '@/components/NavLink';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { 
   LayoutDashboard, 
-  Clock as ClockIcon, 
-  Star, 
   Users, 
-  Calendar, 
-  DollarSign, 
-  FileText,
   LogOut,
   Settings,
-  User,
-  CheckSquare,
   History,
-  CheckCircle,
   Bell,
-  MapPin,
   Briefcase,
-  UserCheck
+  DollarSign,
+  UserCircle
 } from 'lucide-react';
 
 const menuItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Profile', url: '/profile', icon: User, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Clock In/Out', url: '/clock', icon: ClockIcon, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Work From Home Location', url: '/work-from-home', icon: MapPin, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Employee Ratings', url: '/ratings', icon: Star, roles: ['admin', 'operationsstaff'] },
+  { title: 'Financials', url: '/financials', icon: DollarSign, roles: ['admin'] },
+  { title: 'Clients', url: '/clients', icon: UserCircle, roles: ['admin'] },
   // { title: 'Lead Tracking', url: '/leads', icon: Users, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Recruitment Leads', url: '/recruitment-leads', icon: Briefcase, roles: ['admin'] },
-  { title: 'Candidate CVs', url: '/candidate-cvs', icon: UserCheck, roles: ['admin'] },
-  { title: 'Tasks', url: '/tasks', icon: CheckSquare, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Reminders', url: '/reminders', icon: Bell, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Availability', url: '/availability', icon: CheckCircle, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Leave Management', url: '/leave', icon: Calendar, roles: ['admin', 'operationsstaff'], badge: 'Soon' },
-  { title: 'SaaS Config', url: '/saas', icon: DollarSign, roles: ['admin'], badge: 'Soon' },
-  { title: 'CV Automation', url: '/cv-automation', icon: FileText, roles: ['admin', 'operationsstaff'], badge: 'Soon' },
 ];
 
 function AppSidebar() {
@@ -173,8 +158,9 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen w-full">
         <AppSidebar />
         <div className="flex-1 flex flex-col">
-          <header className="h-14 border-b bg-card flex items-center px-4">
+          <header className="h-14 border-b bg-card flex items-center justify-between px-4">
             <SidebarTrigger />
+            <ThemeToggle />
           </header>
           <main className="flex-1 p-3 sm:p-4 md:p-6 bg-background">
             {children}

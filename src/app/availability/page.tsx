@@ -1,27 +1,5 @@
-"use client";
+import { redirect } from 'next/navigation';
 
-import dynamic from 'next/dynamic';
-
-// Dynamically import with SSR disabled to prevent build-time errors with AuthProvider
-const ProtectedRoute = dynamic(() => import("@/components/ProtectedRoute").then(mod => ({ default: mod.ProtectedRoute })), {
-  ssr: false,
-});
-
-const DashboardLayout = dynamic(() => import("@/components/DashboardLayout").then(mod => ({ default: mod.DashboardLayout })), {
-  ssr: false,
-});
-
-const Availability = dynamic(() => import("@/pages/Availability"), {
-  ssr: false,
-});
-
-export default function ProfilePage() {
-  return (
-    <ProtectedRoute>
-      <DashboardLayout>
-        <Availability />
-      </DashboardLayout>
-    </ProtectedRoute>
-  );
+export default function AvailabilityPage() {
+  redirect('/dashboard');
 }
-
