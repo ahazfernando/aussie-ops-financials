@@ -31,17 +31,24 @@ import {
   User,
   CheckSquare,
   History,
-  CheckCircle
+  CheckCircle,
+  Bell,
+  MapPin,
+  Briefcase,
+  UserCheck
 } from 'lucide-react';
 
 const menuItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Profile', url: '/profile', icon: User, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Clock In/Out', url: '/clock', icon: ClockIcon, roles: ['admin', 'operationsstaff', 'itteam'] },
+  { title: 'Work From Home Location', url: '/work-from-home', icon: MapPin, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Employee Ratings', url: '/ratings', icon: Star, roles: ['admin', 'operationsstaff'] },
-  { title: 'Lead Tracking', url: '/leads', icon: Users, roles: ['admin', 'operationsstaff', 'itteam'] },
+  // { title: 'Lead Tracking', url: '/leads', icon: Users, roles: ['admin', 'operationsstaff', 'itteam'] },
+  { title: 'Recruitment Leads', url: '/recruitment-leads', icon: Briefcase, roles: ['admin'] },
+  { title: 'Candidate CVs', url: '/candidate-cvs', icon: UserCheck, roles: ['admin'] },
   { title: 'Tasks', url: '/tasks', icon: CheckSquare, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Task History', url: '/task-history', icon: History, roles: ['admin', 'operationsstaff', 'itteam'] },
+  { title: 'Reminders', url: '/reminders', icon: Bell, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Availability', url: '/availability', icon: CheckCircle, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Leave Management', url: '/leave', icon: Calendar, roles: ['admin', 'operationsstaff'], badge: 'Soon' },
   { title: 'SaaS Config', url: '/saas', icon: DollarSign, roles: ['admin'], badge: 'Soon' },
@@ -66,10 +73,21 @@ function AppSidebar() {
 
   return (
     <Sidebar className={isCollapsed ? 'w-14' : 'w-64'}>
-      <SidebarContent>
+      <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div className="p-4 border-b border-sidebar-border">
           {!isCollapsed && (
-            <h2 className="text-lg font-bold text-sidebar-foreground">We Will AU</h2>
+            <img 
+              src="/logos/OutbacksOfficialLogo.png" 
+              alt="We Will AU" 
+              className="h-8 w-auto object-contain"
+            />
+          )}
+          {isCollapsed && (
+            <img 
+              src="/logos/outback logo white-01.png" 
+              alt="We Will AU" 
+              className="h-8 w-auto object-contain mx-auto"
+            />
           )}
         </div>
 
@@ -158,7 +176,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           <header className="h-14 border-b bg-card flex items-center px-4">
             <SidebarTrigger />
           </header>
-          <main className="flex-1 p-6 bg-background">
+          <main className="flex-1 p-3 sm:p-4 md:p-6 bg-background">
             {children}
           </main>
         </div>
