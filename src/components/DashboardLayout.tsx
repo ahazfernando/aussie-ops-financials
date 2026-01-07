@@ -91,14 +91,7 @@ function AppSidebar() {
                     >
                       <item.icon className="h-4 w-4" />
                       {!isCollapsed && (
-                        <span className="flex items-center gap-2">
-                          {item.title}
-                          {item.badge && (
-                            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
-                              {item.badge}
-                            </span>
-                          )}
-                        </span>
+                        <span>{item.title}</span>
                       )}
                     </NavLink>
                   </SidebarMenuButton>

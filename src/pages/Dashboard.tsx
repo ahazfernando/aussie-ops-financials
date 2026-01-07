@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Clock, Star, Users, Calendar, TrendingUp, CheckSquare, ArrowRight, AlertCircle, Bell, Plus, LogOut, LogIn, UserCircle, DollarSign, TrendingDown, FileText, Wallet, Loader2 } from 'lucide-react';
+import { Clock, Star, Users, Calendar, TrendingUp, CheckSquare, ArrowRight, AlertCircle, Bell, Plus, UserCircle, DollarSign, TrendingDown, FileText, Wallet, Loader2 } from 'lucide-react';
 import { getTasksByUser, getCompletedTasks, getCompletedTasksByUser } from '@/lib/tasks';
 import { Task } from '@/types/task';
 import { getRemindersByUser } from '@/lib/reminders';
@@ -43,12 +43,8 @@ const Dashboard = () => {
   const [loadingBusy, setLoadingBusy] = useState(true);
   const [recentActivity, setRecentActivity] = useState<{
     completedTask: Task | null;
-    recentClockOut: { userName: string; clockOutTime: Date } | null;
-    recentClockIn: { userName: string; clockInTime: Date } | null;
   }>({
     completedTask: null,
-    recentClockOut: null,
-    recentClockIn: null,
   });
   const [loadingActivity, setLoadingActivity] = useState(true);
   const [kpiData, setKpiData] = useState({
@@ -377,200 +373,6 @@ const Dashboard = () => {
     }
   };
 
-  const loadClockInToday = async () => {
-    if (!user || !db) return;
-    
-    try {
-      setKpiData(prev => ({ ...prev, clockInToday: { ...prev.clockInToday, loading: true } }));
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dateString = format(today, 'yyyy-MM-dd');
-      
-      const q = query(
-        collection(db, 'timeEntries'),
-        where('userId', '==', user.id),
-        where('dateString', '==', dateString)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        const doc = querySnapshot.docs[0];
-        const data = getTimeEntryData(doc.data());
-        
-        if (data.clockIn) {
-          const clockInTime = data.clockIn.toDate();
-          const formattedTime = format(clockInTime, 'hh:mm a');
-          setKpiData(prev => ({ 
-            ...prev, 
-            clockInToday: { value: formattedTime, loading: false } 
-          }));
-        } else {
-          setKpiData(prev => ({ 
-            ...prev, 
-            clockInToday: { value: 'Not Clocked In', loading: false } 
-          }));
-        }
-      } else {
-        setKpiData(prev => ({ 
-          ...prev, 
-          clockInToday: { value: 'Not Clocked In', loading: false } 
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading clock in today:', error);
-      setKpiData(prev => ({ 
-        ...prev, 
-        clockInToday: { value: 'Error', loading: false } 
-      }));
-    }
-  };
-
-  const loadWeeklyRating = async () => {
-    if (!user || !db) return;
-    
-    try {
-      setKpiData(prev => ({ ...prev, weeklyRating: { ...prev.weeklyRating, loading: true } }));
-      
-      const now = new Date();
-      const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
-      const weekEnd = endOfWeek(now, { weekStartsOn: 1 }); // Sunday
-      
-      const q = query(
-        collection(db, 'ratings'),
-        where('employeeId', '==', user.id)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        const ratings = querySnapshot.docs
-          .map(doc => {
-            const data = doc.data();
-            const ratingDate = data.week ? new Date(data.week) : data.createdAt?.toDate() || new Date();
-            return {
-              rating: data.rating || 0,
-              date: ratingDate,
-            };
-          })
-          .filter(r => r.rating > 0 && r.date >= weekStart && r.date <= weekEnd);
-        
-        if (ratings.length > 0) {
-          const sum = ratings.reduce((a, b) => a + b.rating, 0);
-          const avg = Math.round((sum / ratings.length) * 10) / 10;
-          setKpiData(prev => ({ 
-            ...prev, 
-            weeklyRating: { value: `${avg}/5`, loading: false } 
-          }));
-        } else {
-          setKpiData(prev => ({ 
-            ...prev, 
-            weeklyRating: { value: 'No Rating', loading: false } 
-          }));
-        }
-      } else {
-        setKpiData(prev => ({ 
-          ...prev, 
-          weeklyRating: { value: 'No Rating', loading: false } 
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading weekly rating:', error);
-      setKpiData(prev => ({ 
-        ...prev, 
-        weeklyRating: { value: 'Error', loading: false } 
-      }));
-    }
-  };
-
-  const loadPendingLeaveRequests = async () => {
-    if (!user || !db) return;
-    
-    try {
-      setKpiData(prev => ({ ...prev, pendingLeaveRequests: { ...prev.pendingLeaveRequests, loading: true } }));
-      
-      const q = query(
-        collection(db, 'leaveRequests'),
-        where('status', '==', 'pending')
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const pendingCount = querySnapshot.size;
-      
-      setKpiData(prev => ({ 
-        ...prev, 
-        pendingLeaveRequests: { 
-          value: pendingCount > 0 ? `${pendingCount} Pending` : '0 Pending', 
-          loading: false 
-        } 
-      }));
-    } catch (error) {
-      console.error('Error loading pending leave requests:', error);
-      setKpiData(prev => ({ 
-        ...prev, 
-        pendingLeaveRequests: { value: 'Error', loading: false } 
-      }));
-    }
-  };
-
-  const loadCompletedTasks = async () => {
-    if (!user) return;
-    
-    try {
-      setKpiData(prev => ({ ...prev, completedTasks: { ...prev.completedTasks, loading: true } }));
-      
-      let completedTasks: Task[];
-      
-      if (user.role === 'admin') {
-        completedTasks = await getCompletedTasks();
-      } else {
-        completedTasks = await getCompletedTasksByUser(user.id);
-      }
-      
-      const totalCount = completedTasks.length;
-      
-      setKpiData(prev => ({ 
-        ...prev, 
-        completedTasks: { 
-          value: totalCount.toString(), 
-          loading: false 
-        } 
-      }));
-    } catch (error) {
-      console.error('Error loading completed tasks:', error);
-      setKpiData(prev => ({ 
-        ...prev, 
-        completedTasks: { value: 'Error', loading: false } 
-      }));
-    }
-  };
-
-  const getTimeEntryData = (data: unknown): {
-    userId: string;
-    date: Timestamp;
-    dateString?: string;
-    clockIn: Timestamp | null;
-    clockOut: Timestamp | null;
-    totalHours: number | null;
-    createdAt: Timestamp;
-    updatedAt: Timestamp;
-  } => {
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid time entry data');
-    }
-    return data as {
-      userId: string;
-      date: Timestamp;
-      dateString?: string;
-      clockIn: Timestamp | null;
-      clockOut: Timestamp | null;
-      totalHours: number | null;
-      createdAt: Timestamp;
-      updatedAt: Timestamp;
-    };
-  };
-
   const loadRecentActivity = async () => {
     if (!user || !db) return;
 
@@ -592,98 +394,8 @@ const Dashboard = () => {
         console.error('Error loading completed task:', error);
       }
 
-      // Load most recent clock out
-      let recentClockOut: { userName: string; clockOutTime: Date } | null = null;
-      try {
-        // Fetch recent time entries and filter in memory
-        const timeEntriesQuery = query(
-          collection(db, 'timeEntries'),
-          orderBy('updatedAt', 'desc'),
-          limit(50) // Get recent entries to filter
-        );
-        const timeEntriesSnapshot = await getDocs(timeEntriesQuery);
-        
-        const clockOuts: Array<{ userId: string; clockOutTime: Date }> = [];
-        timeEntriesSnapshot.docs.forEach((doc) => {
-          try {
-            const data = getTimeEntryData(doc.data());
-            if (data.clockOut) {
-              clockOuts.push({
-                userId: data.userId,
-                clockOutTime: data.clockOut.toDate(),
-              });
-            }
-          } catch {
-            // Skip invalid entries
-          }
-        });
-
-        if (clockOuts.length > 0) {
-          // Sort by clock out time (most recent first)
-          clockOuts.sort((a, b) => b.clockOutTime.getTime() - a.clockOutTime.getTime());
-          const mostRecent = clockOuts[0];
-          const users = await getAllUsers();
-          const userInfo = users.find((u: any) => u.id === mostRecent.userId);
-          const userName = userInfo 
-            ? (userInfo.name || `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim() || userInfo.email)
-            : 'Unknown User';
-          recentClockOut = {
-            userName,
-            clockOutTime: mostRecent.clockOutTime,
-          };
-        }
-      } catch (error) {
-        console.error('Error loading recent clock out:', error);
-      }
-
-      // Load most recent clock in
-      let recentClockIn: { userName: string; clockInTime: Date } | null = null;
-      try {
-        // Fetch recent time entries and filter in memory
-        const timeEntriesQuery = query(
-          collection(db, 'timeEntries'),
-          orderBy('updatedAt', 'desc'),
-          limit(50) // Get recent entries to filter
-        );
-        const timeEntriesSnapshot = await getDocs(timeEntriesQuery);
-        
-        const clockIns: Array<{ userId: string; clockInTime: Date }> = [];
-        timeEntriesSnapshot.docs.forEach((doc) => {
-          try {
-            const data = getTimeEntryData(doc.data());
-            if (data.clockIn) {
-              clockIns.push({
-                userId: data.userId,
-                clockInTime: data.clockIn.toDate(),
-              });
-            }
-          } catch {
-            // Skip invalid entries
-          }
-        });
-
-        if (clockIns.length > 0) {
-          // Sort by clock in time (most recent first)
-          clockIns.sort((a, b) => b.clockInTime.getTime() - a.clockInTime.getTime());
-          const mostRecent = clockIns[0];
-          const users = await getAllUsers();
-          const userInfo = users.find((u: any) => u.id === mostRecent.userId);
-          const userName = userInfo 
-            ? (userInfo.name || `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim() || userInfo.email)
-            : 'Unknown User';
-          recentClockIn = {
-            userName,
-            clockInTime: mostRecent.clockInTime,
-          };
-        }
-      } catch (error) {
-        console.error('Error loading recent clock in:', error);
-      }
-
       setRecentActivity({
         completedTask,
-        recentClockOut,
-        recentClockIn,
       });
     } catch (error) {
       console.error('Error loading recent activity:', error);
@@ -1062,28 +774,6 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* Cash Flow Charts - Admin Only */}
-      {user?.role === 'admin' && (
-        <div className="grid gap-6 grid-cols-1 md:grid-cols-3">
-          <CashFlowTrends 
-            monthlyData={chartData?.monthlyData} 
-            isLoading={loadingCharts} 
-            hasData={!!chartData && chartData.monthlyData.length > 0} 
-          />
-          <CashFlowDistribution 
-            totalIncome={chartData?.totalIncome} 
-            totalExpenses={chartData?.totalExpenses} 
-            isLoading={loadingCharts} 
-            hasData={!!chartData && (chartData.totalIncome > 0 || chartData.totalExpenses > 0)} 
-          />
-          <MonthlyNetCashFlow 
-            monthlyData={chartData?.monthlyData} 
-            isLoading={loadingCharts} 
-            hasData={!!chartData && chartData.monthlyData.length > 0} 
-          />
-        </div>
-      )}
-
       <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
         <Card className="border-border/50 transition-smooth overflow-hidden group">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1243,45 +933,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                 )}
-                {recentActivity.recentClockOut && (
-                  <div className="flex items-start gap-3 p-3 rounded-xl border border-blue-500/20 bg-gradient-to-r from-blue-500/10 to-transparent hover:from-blue-500/15 transition-smooth">
-                    <div className="p-1.5 rounded-lg bg-blue-500/20 flex-shrink-0">
-                      <LogOut className="h-4 w-4 text-blue-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground">User clocked out</p>
-                      <p className="text-muted-foreground text-xs mt-0.5 truncate">
-                        {recentActivity.recentClockOut.userName}
-                      </p>
-                      <p className="text-muted-foreground text-xs mt-1">
-                        {formatDistanceToNow(
-                          recentActivity.recentClockOut.clockOutTime,
-                          { addSuffix: true }
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {recentActivity.recentClockIn && (
-                  <div className="flex items-start gap-3 p-3 rounded-xl border border-purple-500/20 bg-gradient-to-r from-purple-500/10 to-transparent hover:from-purple-500/15 transition-smooth">
-                    <div className="p-1.5 rounded-lg bg-purple-500/20 flex-shrink-0">
-                      <LogIn className="h-4 w-4 text-purple-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground">User clocked in</p>
-                      <p className="text-muted-foreground text-xs mt-0.5 truncate">
-                        {recentActivity.recentClockIn.userName}
-                      </p>
-                      <p className="text-muted-foreground text-xs mt-1">
-                        {formatDistanceToNow(
-                          recentActivity.recentClockIn.clockInTime,
-                          { addSuffix: true }
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {!recentActivity.completedTask && !recentActivity.recentClockOut && !recentActivity.recentClockIn && (
+                {!recentActivity.completedTask && (
                   <div className="text-center py-12 text-muted-foreground">
                     <div className="inline-flex p-4 rounded-2xl bg-blue-500/10 mb-4">
                       <TrendingUp className="h-8 w-8 text-blue-500 opacity-60" />
@@ -1296,7 +948,7 @@ const Dashboard = () => {
         </Card>
       </div>
 
-      {/* Active Users and Recent Clock Outs Section */}
+      {/* Active Users Section */}
       <ActiveUsersSection />
 
       {/* Assigned Tasks Section */}
