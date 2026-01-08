@@ -96,7 +96,7 @@ const STATUSES: LeadStatus[] = ['New', 'Contacted', 'Qualified', 'Meeting Schedu
 const KANBAN_STATUSES: LeadStatus[] = ['New', 'Contacted', 'Qualified', 'Meeting Scheduled'];
 const PRIORITIES: LeadPriority[] = ['Low', 'Medium', 'High', 'Urgent'];
 const PLATFORMS: Platform[] = ['Jora', 'Seek', 'Indeed', 'LinkedIn', 'Facebook', 'Instagram', 'Referral', 'Website', 'Direct Contact', 'Other'];
-const JOB_ROLES: JobRole[] = ['Chef / Cook', 'Head Chef', 'Sous Chef', 'Chef De Partie', 'Commis Chef', 'Kitchen Hand', 'Waiter / Waitress', 'Barista', 'Manager', 'Other'];
+const REQUESTED_SERVICES: JobRole[] = ['Business IT Support', 'Web Development', 'Data Backup and Recovery', 'Hardware Repairs and Installations', 'Home IT Support / Assistance', 'IT Promotion / MAC Health Check', 'IT Remote Support', 'IT National Dealers', 'Other'];
 
 const STATUS_COLORS: Record<LeadStatus, string> = {
   'New': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100',
@@ -312,10 +312,7 @@ const RecruitmentLeads = () => {
   const [remarks, setRemarks] = useState<string[]>(['']);
   const [tasks, setTasks] = useState<string[]>(['']);
   const [meetingDate, setMeetingDate] = useState<Date | undefined>(undefined);
-  const [assignedEmployee, setAssignedEmployee] = useState<string>('');
-  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [sortOrder, setSortOrder] = useState<'latest' | 'oldest'>('latest');
   const [currentPage, setCurrentPage] = useState(1);
@@ -515,14 +512,8 @@ const RecruitmentLeads = () => {
         if (employeePosition) leadData.employeePosition = employeePosition;
       }
       
-      // Override with assigned employee if set
-      if (assignedEmployee) {
-        const selectedUser = allUsers.find(u => u.id === assignedEmployee);
-        if (selectedUser) {
-          leadData.assignedTo = selectedUser.id;
-          leadData.assignedToName = selectedUser.name || `${selectedUser.firstName || ''} ${selectedUser.lastName || ''}`.trim() || selectedUser.email;
-        }
-      } else if (formData.assignedTo) {
+      // Handle assigned employee from formData
+      if (formData.assignedTo) {
         leadData.assignedTo = formData.assignedTo;
         leadData.assignedToName = formData.assignedToName;
       }
@@ -558,7 +549,7 @@ const RecruitmentLeads = () => {
       }
 
       // Send notification if employee is assigned (new assignment or changed assignment)
-      const currentAssignedEmployee = assignedEmployee || formData.assignedTo;
+      const currentAssignedEmployee = formData.assignedTo;
       const previousAssignedEmployee = editingLead?.assignedTo;
       
       if (currentAssignedEmployee && currentAssignedEmployee !== previousAssignedEmployee) {
@@ -864,7 +855,7 @@ const RecruitmentLeads = () => {
 
   const exportToCSV = () => {
     const headers = [
-      'Lead ID', 'Date', 'Platform', 'Business Name', 'Job Location', 'Job Role',
+      'Lead ID', 'Date', 'Platform', 'Business Name', 'Job Location', 'Requested Service',
       'Business Owner/Manager', 'Vacancy', 'Contact No', 'Email', 'Status', 'Priority'
     ];
     
@@ -929,7 +920,7 @@ const RecruitmentLeads = () => {
               </div>
               <div>
                 <h1 className="text-5xl font-semibold tracking-tight bg-gradient-to-r from-foreground via-foreground/90 to-primary bg-clip-text text-transparent">
-                  Recruitment Leads
+                  Business Leads
                 </h1>
                 <p className="text-muted-foreground text-sm mt-1.5 ml-1 flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
@@ -973,8 +964,6 @@ const RecruitmentLeads = () => {
                         setRemarks(['']);
                         setTasks(['']);
                         setMeetingDate(undefined);
-                        setAssignedEmployee('');
-                        setEmployeeSearchQuery('');
                       }} 
                       className="shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 bg-gradient-to-r from-primary via-primary to-blue-600 hover:from-primary/90 hover:via-primary/90 hover:to-blue-500 text-white font-semibold"
                     >
@@ -1031,18 +1020,18 @@ const RecruitmentLeads = () => {
                         <Input id="jobLocation" name="jobLocation" placeholder="Location" defaultValue={editingLead?.jobLocation || ''} required />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="jobRole">Job Role *</Label>
+                        <Label htmlFor="jobRole">Requested Service *</Label>
                         <Select 
                           value={formData.jobRole || editingLead?.jobRole || ''} 
                           onValueChange={(value) => setFormData({ ...formData, jobRole: value as JobRole })}
                           required
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select job role" />
+                            <SelectValue placeholder="Select requested service" />
                           </SelectTrigger>
                           <SelectContent>
-                            {JOB_ROLES.map((role) => (
-                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                            {REQUESTED_SERVICES.map((service) => (
+                              <SelectItem key={service} value={service}>{service}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1175,61 +1164,6 @@ const RecruitmentLeads = () => {
                               onSelect={setMeetingDate}
                               initialFocus
                             />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label htmlFor="assignedEmployee">Assign Employee</Label>
-                        <Popover open={employeeDropdownOpen} onOpenChange={setEmployeeDropdownOpen}>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              aria-expanded={employeeDropdownOpen}
-                              className="w-full justify-between"
-                            >
-                              {assignedEmployee
-                                ? allUsers.find((u) => u.id === assignedEmployee)?.name || 
-                                  allUsers.find((u) => u.id === assignedEmployee)?.email ||
-                                  'Select employee...'
-                                : 'Select employee...'}
-                              <User className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-full p-0" align="start">
-                            <Command>
-                              <CommandInput 
-                                placeholder="Search employees..." 
-                                value={employeeSearchQuery}
-                                onValueChange={setEmployeeSearchQuery}
-                              />
-                              <CommandList>
-                                <CommandEmpty>No employees found.</CommandEmpty>
-                                <CommandGroup>
-                                  {allUsers
-                                    .filter((user) => {
-                                      if (!employeeSearchQuery.trim()) return true;
-                                      const query = employeeSearchQuery.toLowerCase();
-                                      const userName = (user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || '').toLowerCase();
-                                      const userEmail = (user.email || '').toLowerCase();
-                                      return userName.includes(query) || userEmail.includes(query);
-                                    })
-                                    .map((user) => (
-                                      <CommandItem
-                                        key={user.id}
-                                        value={user.id}
-                                        onSelect={() => {
-                                          setAssignedEmployee(user.id === assignedEmployee ? '' : user.id);
-                                          setEmployeeDropdownOpen(false);
-                                          setEmployeeSearchQuery('');
-                                        }}
-                                      >
-                                        {user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email}
-                                      </CommandItem>
-                                    ))}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
                           </PopoverContent>
                         </Popover>
                       </div>
@@ -1665,7 +1599,7 @@ const RecruitmentLeads = () => {
                     <TableHead className="font-bold text-sm text-foreground">Platform</TableHead>
                     <TableHead className="font-bold text-sm text-foreground">Business Name</TableHead>
                     <TableHead className="font-bold text-sm text-foreground">Location</TableHead>
-                    <TableHead className="font-bold text-sm text-foreground">Job Role</TableHead>
+                    <TableHead className="font-bold text-sm text-foreground">Requested Service</TableHead>
                     <TableHead className="font-bold text-sm text-foreground">Contact</TableHead>
                     <TableHead className="font-bold text-sm text-foreground">Status</TableHead>
                     <TableHead className="font-bold text-sm text-foreground">Priority</TableHead>
@@ -2028,7 +1962,7 @@ const RecruitmentLeads = () => {
                         </CardHeader>
                         <CardContent className="space-y-3">
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Job Role</Label>
+                            <Label className="text-xs text-muted-foreground">Requested Service</Label>
                             <p className="text-sm font-semibold">{selectedLead.jobRole}</p>
                           </div>
                           <div className="space-y-1">

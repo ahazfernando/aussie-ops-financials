@@ -25,7 +25,7 @@ import {
   InflowCategory,
   OutflowCategory,
 } from '@/types/transaction';
-import { calculateGST, calculateGrossAmount } from '@/lib/financials';
+import { calculateGrossAmount } from '@/lib/financials';
 
 interface TransactionFormDialogProps {
   open: boolean;
@@ -65,7 +65,7 @@ export function TransactionFormDialog({
     amountNet: transaction?.amountNet || 0,
     paymentMethod: (transaction?.paymentMethod || 'CREDIT_DEBIT_CARD') as PaymentMethod,
     gstApplied: transaction?.gstApplied ?? true,
-    userSelectedGst: false, // For BANK_TRANSFER_PERSONAL
+    userSelectedGst: transaction?.gstApplied ?? false, // User-controlled GST for all payment methods
     description: transaction?.description || '',
     clientId: transaction?.clientId || '',
     clientName: transaction?.clientName || '',
@@ -96,14 +96,18 @@ export function TransactionFormDialog({
   useEffect(() => {
     if (open) {
       if (transaction) {
+        // If transaction is OUTFLOW with GST category, change to TAX since GST is not available for OUTFLOW
+        const category = transaction.type === 'OUTFLOW' && transaction.category === 'GST' 
+          ? 'TAX' 
+          : transaction.category;
         setFormData({
           type: transaction.type,
-          category: transaction.category,
+          category: category,
           customCategory: transaction.customCategory || '',
           amountNet: transaction.amountNet,
           paymentMethod: transaction.paymentMethod,
           gstApplied: transaction.gstApplied,
-          userSelectedGst: transaction.gstApplied,
+          userSelectedGst: transaction.gstApplied ?? false, // Use stored GST preference
           description: transaction.description || '',
           clientId: transaction.clientId || '',
           clientName: transaction.clientName || '',
@@ -117,7 +121,7 @@ export function TransactionFormDialog({
           amountNet: 0,
           paymentMethod: 'CREDIT_DEBIT_CARD',
           gstApplied: true,
-          userSelectedGst: false,
+          userSelectedGst: false, // Default to no GST, user can toggle
           description: '',
           clientId: '',
           clientName: '',
@@ -129,17 +133,18 @@ export function TransactionFormDialog({
     }
   }, [open, transaction]);
 
-  // Calculate GST based on payment method and user selection
-  const gstCalc = calculateGST(
-    formData.amountNet,
-    formData.paymentMethod,
-    formData.paymentMethod === 'BANK_TRANSFER_PERSONAL' ? formData.userSelectedGst : undefined
-  );
-  
-  const gstAmount = formData.paymentMethod === 'BANK_TRANSFER_PERSONAL' 
-    ? (formData.userSelectedGst ? formData.amountNet * 0.1 : 0)
-    : gstCalc.gstAmount;
-    
+  // Ensure category is valid when type changes (handle edge case where category might be GST for OUTFLOW)
+  useEffect(() => {
+    if (formData.type === 'OUTFLOW' && formData.category === 'GST') {
+      setFormData((prev) => ({
+        ...prev,
+        category: 'TAX',
+      }));
+    }
+  }, [formData.type, formData.category]);
+
+  // Calculate GST based on user selection (no automatic calculation)
+  const gstAmount = formData.userSelectedGst ? formData.amountNet * 0.1 : 0;
   const amountGross = calculateGrossAmount(formData.amountNet, gstAmount);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -181,9 +186,7 @@ export function TransactionFormDialog({
         customCategory: formData.category === 'OTHER' ? formData.customCategory : undefined,
         amountNet: formData.amountNet,
         paymentMethod: formData.paymentMethod,
-        gstApplied: formData.paymentMethod === 'BANK_TRANSFER_PERSONAL' 
-          ? formData.userSelectedGst 
-          : gstCalc.gstApplied,
+        gstApplied: formData.userSelectedGst, // Use user's GST selection for all payment methods
         description: formData.description,
         clientId: formData.clientId || undefined,
         clientName: formData.clientName || undefined,
@@ -245,8 +248,10 @@ export function TransactionFormDialog({
     }
   };
 
-  const showGstToggle = formData.paymentMethod === 'BANK_TRANSFER_PERSONAL';
-  const categories = formData.type === 'INFLOW' ? INFLOW_CATEGORIES : OUTFLOW_CATEGORIES;
+  // Show GST toggle for all payment methods
+  const categories = formData.type === 'INFLOW' 
+    ? INFLOW_CATEGORIES 
+    : OUTFLOW_CATEGORIES.filter(cat => cat !== 'GST');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -273,7 +278,7 @@ export function TransactionFormDialog({
                   setFormData((prev) => ({
                     ...prev,
                     type: value as TransactionType,
-                    category: value === 'INFLOW' ? 'CLIENT_PAYMENT' : 'GST',
+                    category: value === 'INFLOW' ? 'CLIENT_PAYMENT' : 'TAX',
                   }));
                 }}
               >
@@ -377,7 +382,7 @@ export function TransactionFormDialog({
                 setFormData((prev) => ({
                   ...prev,
                   paymentMethod: value as PaymentMethod,
-                  userSelectedGst: false,
+                  // Keep user's GST selection when changing payment method
                 }))
               }
             >
@@ -394,21 +399,19 @@ export function TransactionFormDialog({
             </Select>
           </div>
 
-          {/* GST Toggle for Personal Bank Transfer */}
-          {showGstToggle && (
-            <div className="flex items-center space-x-2 p-3 bg-muted rounded-md">
-              <Checkbox
-                id="gst-toggle"
-                checked={formData.userSelectedGst}
-                onCheckedChange={(checked) =>
-                  setFormData((prev) => ({ ...prev, userSelectedGst: checked === true }))
-                }
-              />
-              <Label htmlFor="gst-toggle" className="cursor-pointer">
-                Apply GST (10%)
-              </Label>
-            </div>
-          )}
+          {/* GST Toggle for All Payment Methods */}
+          <div className="flex items-center space-x-2 p-3 bg-muted rounded-md">
+            <Checkbox
+              id="gst-toggle"
+              checked={formData.userSelectedGst}
+              onCheckedChange={(checked) =>
+                setFormData((prev) => ({ ...prev, userSelectedGst: checked === true }))
+              }
+            />
+            <Label htmlFor="gst-toggle" className="cursor-pointer">
+              Apply GST (10%)
+            </Label>
+          </div>
 
           {/* GST Calculation Display */}
           <div className="p-4 bg-muted rounded-md space-y-2">
@@ -417,7 +420,7 @@ export function TransactionFormDialog({
               <span className="font-medium">${formData.amountNet.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">GST ({gstCalc.gstApplied ? '10%' : '0%'}):</span>
+              <span className="text-muted-foreground">GST ({formData.userSelectedGst ? '10%' : '0%'}):</span>
               <span className="font-medium">${gstAmount.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-base font-semibold pt-2 border-t">

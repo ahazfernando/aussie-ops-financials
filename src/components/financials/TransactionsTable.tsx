@@ -17,7 +17,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { format } from 'date-fns';
-import { CalendarIcon, Edit, Trash2, Search, Filter, X } from 'lucide-react';
+import { CalendarIcon, Edit, Trash2, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TransactionFormDialog } from './TransactionFormDialog';
 import { toast } from '@/hooks/use-toast';
@@ -40,9 +40,8 @@ export function TransactionsTable({ transactions, onTransactionUpdated }: Transa
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [startDate, setStartDate] = useState<Date | undefined>();
-  const [endDate, setEndDate] = useState<Date | undefined>();
-  const [showFilters, setShowFilters] = useState(false);
+  const [gstFilter, setGstFilter] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined } | undefined>();
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-AU', {
@@ -111,10 +110,15 @@ export function TransactionsTable({ transactions, onTransactionUpdated }: Transa
 
     if (categoryFilter !== 'all' && transaction.category !== categoryFilter) return false;
 
-    if (startDate && transaction.date < startDate) return false;
+    if (gstFilter !== 'all') {
+      if (gstFilter === 'with' && !transaction.gstApplied) return false;
+      if (gstFilter === 'without' && transaction.gstApplied) return false;
+    }
 
-    if (endDate) {
-      const endDateEndOfDay = new Date(endDate);
+    if (dateRange?.from && transaction.date < dateRange.from) return false;
+
+    if (dateRange?.to) {
+      const endDateEndOfDay = new Date(dateRange.to);
       endDateEndOfDay.setHours(23, 59, 59, 999);
       if (transaction.date > endDateEndOfDay) return false;
     }
@@ -128,121 +132,133 @@ export function TransactionsTable({ transactions, onTransactionUpdated }: Transa
     <>
       <div className="space-y-4">
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search transactions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search transactions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setShowFilters(!showFilters)}
-            className="sm:w-auto"
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Filters
-          </Button>
-        </div>
-
-        {showFilters && (
-          <div className="p-4 border-2 rounded-lg space-y-4 bg-muted/50 shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Type</label>
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="INFLOW">Inflow</SelectItem>
-                    <SelectItem value="OUTFLOW">Outflow</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Category</label>
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Start Date</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal',
-                        !startDate && 'text-muted-foreground'
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {startDate ? format(startDate, 'PPP') : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={startDate} onSelect={setStartDate} />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">End Date</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal',
-                        !endDate && 'text-muted-foreground'
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {endDate ? format(endDate, 'PPP') : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={endDate} onSelect={setEndDate} />
-                  </PopoverContent>
-                </Popover>
-              </div>
+          
+          <div className="flex flex-wrap items-end gap-4 w-full">
+            <div className="space-y-2 min-w-[200px] flex-1 max-w-[250px]">
+              <label className="text-sm font-medium">Type (Inflow/Outflow)</label>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="INFLOW">Inflow</SelectItem>
+                  <SelectItem value="OUTFLOW">Outflow</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            {(typeFilter !== 'all' || categoryFilter !== 'all' || startDate || endDate) && (
+            <div className="space-y-2 min-w-[200px] flex-1 max-w-[250px]">
+              <label className="text-sm font-medium">Category</label>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 min-w-[200px] flex-1 max-w-[250px]">
+              <label className="text-sm font-medium">GST</label>
+              <Select value={gstFilter} onValueChange={setGstFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Transactions</SelectItem>
+                  <SelectItem value="with">With GST</SelectItem>
+                  <SelectItem value="without">Without GST</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 flex-1 max-w-[300px]">
+              <label className="text-sm font-medium">Date Range</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      'w-full justify-start text-left font-normal',
+                      !dateRange && 'text-muted-foreground'
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, 'LLL dd, y')} - {format(dateRange.to, 'LLL dd, y')}
+                        </>
+                      ) : (
+                        format(dateRange.from, 'LLL dd, y')
+                      )
+                    ) : (
+                      <span>Pick a date range</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                  />
+                  {dateRange && (
+                    <div className="p-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setDateRange(undefined)}
+                      >
+                        Clear date filter
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {(typeFilter !== 'all' || categoryFilter !== 'all' || gstFilter !== 'all' || dateRange) && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
                   setTypeFilter('all');
                   setCategoryFilter('all');
-                  setStartDate(undefined);
-                  setEndDate(undefined);
+                  setGstFilter('all');
+                  setDateRange(undefined);
                 }}
-                className="w-full"
+                className="mb-0"
               >
                 <X className="mr-2 h-4 w-4" />
                 Clear Filters
               </Button>
             )}
           </div>
-        )}
+        </div>
 
         {/* Table */}
         <div className="rounded-xl border-2 overflow-x-auto shadow-lg">

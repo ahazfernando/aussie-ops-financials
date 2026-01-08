@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Filter, X, Edit, Trash2 } from 'lucide-react';
+import { Search, X, Edit, Trash2 } from 'lucide-react';
 import { ClientFormDialog } from './ClientFormDialog';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +29,6 @@ export function ClientsTable({ clients, onClientUpdated }: ClientsTableProps) {
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<string>('all');
-  const [showFilters, setShowFilters] = useState(false);
 
   const handleDelete = async () => {
     if (!deletingClient) return;
@@ -104,37 +103,23 @@ export function ClientsTable({ clients, onClientUpdated }: ClientsTableProps) {
               className="pl-9"
             />
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setShowFilters(!showFilters)}
-            className="sm:w-auto"
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Filters
-          </Button>
-        </div>
-
-        {showFilters && (
-          <div className="p-4 border-2 rounded-lg space-y-4 bg-muted/50 shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">State</label>
-                <Select value={stateFilter} onValueChange={setStateFilter}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All States</SelectItem>
-                    {AUSTRALIAN_STATES.map((state) => (
-                      <SelectItem key={state.value} value={state.value}>
-                        {state.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="flex gap-2">
+            <div className="space-y-2 min-w-[180px]">
+              <label className="text-sm font-medium">State</label>
+              <Select value={stateFilter} onValueChange={setStateFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All States</SelectItem>
+                  {AUSTRALIAN_STATES.map((state) => (
+                    <SelectItem key={state.value} value={state.value}>
+                      {state.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-
             {stateFilter !== 'all' && (
               <Button
                 variant="ghost"
@@ -142,14 +127,14 @@ export function ClientsTable({ clients, onClientUpdated }: ClientsTableProps) {
                 onClick={() => {
                   setStateFilter('all');
                 }}
-                className="w-full"
+                className="mt-6"
               >
                 <X className="mr-2 h-4 w-4" />
-                Clear Filters
+                Clear
               </Button>
             )}
           </div>
-        )}
+        </div>
 
         {/* Table */}
         <div className="rounded-xl border-2 overflow-x-auto shadow-lg">

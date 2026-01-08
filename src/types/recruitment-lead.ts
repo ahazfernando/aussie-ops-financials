@@ -23,15 +23,14 @@ export type Platform =
   | 'Other';
 
 export type JobRole = 
-  | 'Chef / Cook' 
-  | 'Head Chef' 
-  | 'Sous Chef' 
-  | 'Chef De Partie'
-  | 'Commis Chef'
-  | 'Kitchen Hand' 
-  | 'Waiter / Waitress' 
-  | 'Barista' 
-  | 'Manager' 
+  | 'Business IT Support'
+  | 'Web Development'
+  | 'Data Backup and Recovery'
+  | 'Hardware Repairs and Installations'
+  | 'Home IT Support / Assistance'
+  | 'IT Promotion / MAC Health Check'
+  | 'IT Remote Support'
+  | 'IT National Dealers'
   | 'Other';
 
 export interface ActivityLog {

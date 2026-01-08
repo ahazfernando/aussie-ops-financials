@@ -19,6 +19,7 @@ import {
 import { NavLink } from '@/components/NavLink';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { RotatingLogo } from '@/components/RotatingLogo';
 import { 
   LayoutDashboard, 
   Users, 
@@ -36,7 +37,7 @@ const menuItems = [
   { title: 'Financials', url: '/financials', icon: DollarSign, roles: ['admin'] },
   { title: 'Clients', url: '/clients', icon: UserCircle, roles: ['admin'] },
   // { title: 'Lead Tracking', url: '/leads', icon: Users, roles: ['admin', 'operationsstaff', 'itteam'] },
-  { title: 'Recruitment Leads', url: '/recruitment-leads', icon: Briefcase, roles: ['admin'] },
+  { title: 'Business Leads', url: '/recruitment-leads', icon: Briefcase, roles: ['admin'] },
   { title: 'Reminders', url: '/reminders', icon: Bell, roles: ['admin', 'operationsstaff', 'itteam'] },
 ];
 
@@ -61,18 +62,24 @@ function AppSidebar() {
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div className="p-4 border-b border-sidebar-border">
           {!isCollapsed && (
-            <img 
-              src="/logos/OutbacksOfficialLogo.png" 
-              alt="We Will AU" 
-              className="h-8 w-auto object-contain"
-            />
+            <a 
+              href="https://www.wewillaustralia.com.au" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block w-full cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <RotatingLogo className="w-full" />
+            </a>
           )}
           {isCollapsed && (
-            <img 
-              src="/logos/outback logo white-01.png" 
-              alt="We Will AU" 
-              className="h-8 w-auto object-contain mx-auto"
-            />
+            <a 
+              href="https://www.wewillaustralia.com.au" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block mx-auto cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <RotatingLogo className="mx-auto" />
+            </a>
           )}
         </div>
 
