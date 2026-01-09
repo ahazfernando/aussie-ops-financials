@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 
 const logos = [
   '/TRANSITION/8.png',
-  '/TRANSITION/9.png',
+  '/TRANSITION/TL white logo-01.png',
   '/TRANSITION/10.png',
 ];
 
