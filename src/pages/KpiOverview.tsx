@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import TargetVsActualCard from "@/components/kpi/TargetVsActualCard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { KPIFormDialog } from "@/components/kpi/KPIFormDialog";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   DollarSign,
   CheckSquare,
@@ -12,19 +16,38 @@ import {
 } from "lucide-react";
 
 export default function KpiOverview() {
+  const { user } = useAuth();
+  const [showKpiDialog, setShowKpiDialog] = useState(false);
+  const isAdmin = user?.role === 'admin';
+
   // NOTE:
   // This page is intentionally simple and uses static/example values.
   // In real usage, pass live data from Firestore or your existing libs.
   return (
     <div className="space-y-6 sm:space-y-8">
-      <div className="space-y-2">
-        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight">
-          KPI Overview
-        </h1>
-        <p className="text-sm sm:text-base text-muted-foreground">
-          Visual comparison of target vs actual performance. This is a reusable component you can
-          drop into Dashboard, Tasks, Financials, or user pages.
-        </p>
+      {/* Header Section */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500/10 via-blue-400/5 to-background border border-blue-500/20 p-6 sm:p-8">
+        <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+        <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="space-y-2">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+              KPI Overview
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Visual comparison of target vs actual performance. This is a reusable component you can
+              drop into Dashboard, Tasks, Financials, or user pages.
+            </p>
+          </div>
+          {isAdmin && (
+            <Button 
+              onClick={() => setShowKpiDialog(true)} 
+              className="w-full sm:w-auto shadow-lg hover:shadow-xl transition-all duration-300 border-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white border-0 font-semibold"
+              size="lg"
+            >
+              Create KPI
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card className="border-2 shadow-xl rounded-3xl overflow-hidden">
@@ -81,6 +104,16 @@ export default function KpiOverview() {
           />
         </CardContent>
       </Card>
+
+      {/* KPI Form Dialog */}
+      <KPIFormDialog
+        open={showKpiDialog}
+        onOpenChange={setShowKpiDialog}
+        onSuccess={() => {
+          setShowKpiDialog(false);
+          // TODO: Refresh KPI data when Firestore integration is complete
+        }}
+      />
     </div>
   );
 }
