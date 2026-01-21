@@ -13,8 +13,17 @@ interface TargetVsActualCostProps {
   title?: string;
 }
 
-const getStatus = (target: number, actual: number) => {
-  if (target <= 0) return { label: "No Target", severity: "neutral" };
+type StatusSeverity = "good" | "warning" | "danger" | "neutral";
+
+const getStatus = (target: number, actual: number): {
+  label: string;
+  severity: StatusSeverity;
+  percentage?: number;
+  variance?: number;
+} => {
+  if (target <= 0) {
+    return { label: "No Target", severity: "neutral" };
+  }
   
   const percentage = (actual / target) * 100;
   const variance = actual - target;
@@ -22,28 +31,28 @@ const getStatus = (target: number, actual: number) => {
   if (percentage <= 100) {
     return { 
       label: "Under Budget", 
-      severity: "good" as const,
+      severity: "good",
       percentage,
       variance 
     };
   } else if (percentage <= 110) {
     return { 
       label: "Slightly Over", 
-      severity: "warning" as const,
+      severity: "warning",
       percentage,
       variance 
     };
   } else {
     return { 
       label: "Over Budget", 
-      severity: "danger" as const,
+      severity: "danger",
       percentage,
       variance 
     };
   }
 };
 
-const getStatusConfig = (severity: "good" | "warning" | "danger" | "neutral") => {
+const getStatusConfig = (severity: StatusSeverity) => {
   switch (severity) {
     case "good":
       return {
