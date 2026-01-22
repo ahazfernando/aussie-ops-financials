@@ -20,9 +20,9 @@ import { NavLink } from '@/components/NavLink';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { RotatingLogo } from '@/components/RotatingLogo';
-import { 
-  LayoutDashboard, 
-  Users, 
+import {
+  LayoutDashboard,
+  Users,
   LogOut,
   Settings,
   History,
@@ -32,6 +32,7 @@ import {
   UserCircle,
   GaugeCircle,
   Calculator,
+  TrendingUp,
 } from 'lucide-react';
 
 const menuItems = [
@@ -42,6 +43,7 @@ const menuItems = [
   { title: 'KPIs', url: '/kpis', icon: GaugeCircle, roles: ['admin'] },
   // { title: 'Lead Tracking', url: '/leads', icon: Users, roles: ['admin', 'operationsstaff', 'itteam'] },
   { title: 'Business Leads', url: '/recruitment-leads', icon: Briefcase, roles: ['admin'] },
+  { title: 'Unit Economics', url: '/unit-economics', icon: TrendingUp, roles: ['admin'] },
   { title: 'Reminders', url: '/reminders', icon: Bell, roles: ['admin', 'operationsstaff', 'itteam'] },
 ];
 
@@ -55,7 +57,7 @@ function AppSidebar() {
     router.push('/login');
   };
 
-  const filteredItems = menuItems.filter(item => 
+  const filteredItems = menuItems.filter(item =>
     user && item.roles.includes(user.role)
   );
 
@@ -66,9 +68,9 @@ function AppSidebar() {
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div className="p-4 border-b border-sidebar-border">
           {!isCollapsed && (
-            <a 
-              href="https://www.wewillaustralia.com.au" 
-              target="_blank" 
+            <a
+              href="https://www.wewillaustralia.com.au"
+              target="_blank"
               rel="noopener noreferrer"
               className="block w-full cursor-pointer hover:opacity-80 transition-opacity"
             >
@@ -76,9 +78,9 @@ function AppSidebar() {
             </a>
           )}
           {isCollapsed && (
-            <a 
-              href="https://www.wewillaustralia.com.au" 
-              target="_blank" 
+            <a
+              href="https://www.wewillaustralia.com.au"
+              target="_blank"
               rel="noopener noreferrer"
               className="block mx-auto cursor-pointer hover:opacity-80 transition-opacity"
             >
@@ -94,9 +96,9 @@ function AppSidebar() {
               {filteredItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink 
-                      to={item.url} 
-                      end 
+                    <NavLink
+                      to={item.url}
+                      end
                       className="hover:bg-sidebar-accent"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                     >
@@ -119,8 +121,8 @@ function AppSidebar() {
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
-                    <NavLink 
-                      to="/settings" 
+                    <NavLink
+                      to="/settings"
                       className="hover:bg-sidebar-accent"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                     >
@@ -141,8 +143,8 @@ function AppSidebar() {
               <p className="text-xs text-sidebar-foreground/70 capitalize">{user.role}</p>
             </div>
           )}
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size={isCollapsed ? 'icon' : 'default'}
             onClick={handleLogout}
             className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent"

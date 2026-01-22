@@ -1,22 +1,22 @@
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  getDocs, 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  getDocs,
   getDoc,
-  query, 
-  where, 
-  orderBy, 
-  Timestamp, 
+  query,
+  where,
+  orderBy,
+  Timestamp,
   deleteDoc,
   onSnapshot,
   QueryConstraint
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { 
-  Cost, 
-  FirestoreCost, 
+import {
+  Cost,
+  FirestoreCost,
   CostType,
   CostFilters,
   CostSummary
@@ -97,10 +97,9 @@ export async function getAllCosts(filters?: CostFilters): Promise<Cost[]> {
       whereConstraints.push(where('category', '==', filters.category));
     }
 
-    // Add orderBy clauses - when filtering by month, we'll sort client-side to avoid index requirement
+    // Add orderBy clauses - single field sort to avoid composite index requirement
     if (!filters?.month) {
       orderConstraints.push(orderBy('month', 'desc'));
-      orderConstraints.push(orderBy('created_at', 'desc'));
     }
 
     const constraints = [...whereConstraints, ...orderConstraints];
@@ -112,14 +111,17 @@ export async function getAllCosts(filters?: CostFilters): Promise<Cost[]> {
       convertFirestoreCost(doc.data(), doc.id)
     );
 
-    // Sort client-side when filtering by month (avoids Firestore index requirement)
-    if (filters?.month) {
-      costs.sort((a, b) => {
-        const dateA = a.createdAt.getTime();
-        const dateB = b.createdAt.getTime();
-        return dateB - dateA; // Descending order (newest first)
-      });
-    }
+    // Sort client-side to enforce consistent ordering and avoid composite index requirements
+    costs.sort((a, b) => {
+      // Primary sort: Month (descending)
+      const monthComparison = b.month.localeCompare(a.month);
+      if (monthComparison !== 0) return monthComparison;
+
+      // Secondary sort: CreatedAt (descending)
+      const dateA = a.createdAt.getTime();
+      const dateB = b.createdAt.getTime();
+      return dateB - dateA;
+    });
 
     return costs;
   } catch (error) {
@@ -304,7 +306,8 @@ export function calculateCostSummary(costs: Cost[], revenue: number = 0): CostSu
  */
 export function subscribeToCosts(
   callback: (costs: Cost[]) => void,
-  filters?: CostFilters
+  filters?: CostFilters,
+  onError?: (error: any) => void
 ): () => void {
   if (!db) {
     throw new Error('Firebase is not initialized');
@@ -327,10 +330,9 @@ export function subscribeToCosts(
     whereConstraints.push(where('category', '==', filters.category));
   }
 
-  // Add orderBy clauses - when filtering by month, we'll sort client-side to avoid index requirement
+  // Add orderBy clauses - single field sort to avoid composite index requirement
   if (!filters?.month) {
     orderConstraints.push(orderBy('month', 'desc'));
-    orderConstraints.push(orderBy('created_at', 'desc'));
   }
 
   const constraints = [...whereConstraints, ...orderConstraints];
@@ -344,19 +346,25 @@ export function subscribeToCosts(
         convertFirestoreCost(doc.data(), doc.id)
       );
 
-      // Sort client-side when filtering by month (avoids Firestore index requirement)
-      if (filters?.month) {
-        costs.sort((a, b) => {
-          const dateA = a.createdAt.getTime();
-          const dateB = b.createdAt.getTime();
-          return dateB - dateA; // Descending order (newest first)
-        });
-      }
+      // Sort client-side to enforce consistent ordering and avoid composite index requirements
+      costs.sort((a, b) => {
+        // Primary sort: Month (descending)
+        const monthComparison = b.month.localeCompare(a.month);
+        if (monthComparison !== 0) return monthComparison;
+
+        // Secondary sort: CreatedAt (descending)
+        const dateA = a.createdAt.getTime();
+        const dateB = b.createdAt.getTime();
+        return dateB - dateA;
+      });
 
       callback(costs);
     },
     (error) => {
       console.error('Error in costs subscription:', error);
+      if (onError) {
+        onError(error);
+      }
     }
   );
 

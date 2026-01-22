@@ -28,15 +28,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Checkbox } from '@/components/ui/checkbox';
-import { 
-  Plus, 
-  Edit, 
-  Trash2, 
-  Search, 
-  Filter, 
-  X, 
-  Download, 
-  BarChart3, 
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Search,
+  Filter,
+  X,
+  Download,
+  BarChart3,
   Calendar as CalendarIcon,
   Phone,
   Mail,
@@ -60,7 +60,9 @@ import {
   Clipboard,
   CheckSquare,
   Star,
-  Flag
+
+  Flag,
+  UserCheck
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -69,11 +71,11 @@ import { Calendar } from '@/components/ui/calendar';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { type DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
-import { 
-  RecruitmentLead, 
-  LeadStatus, 
-  LeadPriority, 
-  Platform, 
+import {
+  RecruitmentLead,
+  LeadStatus,
+  LeadPriority,
+  Platform,
   JobRole,
   ActivityLog,
   FollowUp
@@ -89,6 +91,8 @@ import {
   getRecruitmentLeadsAnalytics,
   subscribeToRecruitmentLeads
 } from '@/lib/recruitment-leads';
+import { createClient } from '@/lib/clients';
+import { LeadsConversionChart } from '@/components/leads/LeadsConversionChart';
 import { LeadAnalytics } from '@/types/recruitment-lead';
 import { createNotification } from '@/lib/notifications';
 
@@ -117,17 +121,19 @@ const PRIORITY_COLORS: Record<LeadPriority, string> = {
 };
 
 // Draggable Lead Card Component
-function DraggableLeadCard({ 
-  lead, 
-  onView, 
-  onEdit, 
-  onDelete, 
-  canEdit 
-}: { 
-  lead: RecruitmentLead; 
+function DraggableLeadCard({
+  lead,
+  onView,
+  onEdit,
+  onDelete,
+  onConvert,
+  canEdit
+}: {
+  lead: RecruitmentLead;
   onView: (lead: RecruitmentLead) => void;
   onEdit: (lead: RecruitmentLead) => void;
   onDelete: (leadId: string) => void;
+  onConvert: (lead: RecruitmentLead) => void;
   canEdit: boolean;
 }) {
   const {
@@ -159,8 +165,8 @@ function DraggableLeadCard({
       {...listeners}
       className="cursor-grab active:cursor-grabbing"
     >
-      <Card 
-        className="hover:shadow-lg transition-all duration-200 border-2 hover:border-primary/50 group" 
+      <Card
+        className="hover:shadow-lg transition-all duration-200 border-2 hover:border-primary/50 group"
         onClick={() => onView(lead)}
       >
         <CardContent className="p-4">
@@ -190,9 +196,9 @@ function DraggableLeadCard({
               {canEdit && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-7 w-7 hover:bg-muted"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -208,7 +214,13 @@ function DraggableLeadCard({
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
+                    {lead.status !== 'Converted' && (
+                      <DropdownMenuItem onClick={() => onConvert(lead)}>
+                        <UserCheck className="h-4 w-4 mr-2" />
+                        Convert to Client
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
                       onClick={() => onDelete(lead.id)}
                       className="text-destructive focus:text-destructive"
                     >
@@ -255,7 +267,7 @@ function DroppableLeadColumn({
   const isActive = isOver || isOverColumn;
 
   return (
-    <div 
+    <div
       ref={setNodeRef}
       className={`flex-1 min-w-0 ${isActive ? 'ring-2 ring-primary ring-offset-2 rounded-lg' : ''}`}
     >
@@ -315,7 +327,27 @@ const RecruitmentLeads = () => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [sortOrder, setSortOrder] = useState<'latest' | 'oldest'>('latest');
   const [currentPage, setCurrentPage] = useState(1);
+
   const itemsPerPage = 10;
+
+  const [convertToClientOpen, setConvertToClientOpen] = useState(false);
+  const [clientFormData, setClientFormData] = useState<{
+    firstName: string;
+    lastName: string;
+    email: string;
+    phoneNumber: string;
+    suburb: string;
+    postCode: string;
+    state: string;
+  }>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phoneNumber: '',
+    suburb: '',
+    postCode: '',
+    state: 'NSW',
+  });
 
   // Configure sensors for drag and drop
   const sensors = useSensors(
@@ -326,8 +358,8 @@ const RecruitmentLeads = () => {
     })
   );
 
-  const canEdit = user?.role === 'admin' || user?.role === 'operationsstaff' || 
-                  (user?.role === 'itteam' && user.permissions?.leadTracking === 'crud');
+  const canEdit = user?.role === 'admin' || user?.role === 'operationsstaff' ||
+    (user?.role === 'itteam' && user.permissions?.leadTracking === 'crud');
   const canView = canEdit || (user?.role === 'itteam' && user.permissions?.leadTracking === 'read');
 
   // Helper function to clean filters (remove empty strings)
@@ -339,20 +371,20 @@ const RecruitmentLeads = () => {
       assignedTo?: string;
       search?: string;
     } = {};
-    
+
     // Type guards: check if values are valid (not empty string)
     const isValidStatus = (status: LeadStatus | ''): status is LeadStatus => {
       return status !== '';
     };
-    
+
     const isValidPlatform = (platform: Platform | ''): platform is Platform => {
       return platform !== '';
     };
-    
+
     const isValidPriority = (priority: LeadPriority | ''): priority is LeadPriority => {
       return priority !== '';
     };
-    
+
     if (isValidStatus(filters.status)) {
       cleaned.status = filters.status;
     }
@@ -368,7 +400,7 @@ const RecruitmentLeads = () => {
     if (includeSearch && searchQuery && searchQuery !== '') {
       cleaned.search = searchQuery;
     }
-    
+
     return cleaned;
   };
 
@@ -381,7 +413,7 @@ const RecruitmentLeads = () => {
         setLoading(true);
         const fetchedLeads = await getAllRecruitmentLeads(cleanFilters(true));
         setLeads(fetchedLeads);
-        
+
         const analyticsData = await getRecruitmentLeadsAnalytics();
         setAnalytics(analyticsData);
       } catch (error) {
@@ -436,13 +468,13 @@ const RecruitmentLeads = () => {
 
     try {
       const nativeFormData = new FormData(e.currentTarget);
-      
+
       // Helper function to get string value or undefined if empty
       const getStringOrUndefined = (value: FormDataEntryValue | null): string | undefined => {
         const str = value as string;
         return str && str.trim() ? str.trim() : undefined;
       };
-      
+
       const leadData: any = {
         dateOfRecording: new Date(nativeFormData.get('dateOfRecording') as string),
         platform: (formData.platform || nativeFormData.get('platform')) as Platform,
@@ -458,45 +490,45 @@ const RecruitmentLeads = () => {
         createdBy: user.id,
         createdByName: user.name || 'Unknown',
       };
-      
+
       // Only include optional fields if they have values
       const link = getStringOrUndefined(nativeFormData.get('link'));
       if (link) leadData.link = link;
-      
+
       const emailAddress = getStringOrUndefined(nativeFormData.get('emailAddress'));
       if (emailAddress) leadData.emailAddress = emailAddress;
-      
+
       const recap = getStringOrUndefined(nativeFormData.get('recap'));
       if (recap) leadData.recap = recap;
-      
+
       // Handle tasks array
       const tasksArray = tasks.filter(t => t.trim() !== '');
       if (tasksArray.length > 0) {
         leadData.tasks = tasksArray.join('\n---\n');
       }
-      
+
       // Handle remarks array
       const remarksArray = remarks.filter(r => r.trim() !== '');
       if (remarksArray.length > 0) {
         leadData.remarks = remarksArray.join('\n---\n');
       }
-      
+
       // Handle meeting date
       if (meetingDate) {
         leadData.meetingScheduled = meetingDate;
       }
-      
+
       // Employee fields - use state instead of FormData for checkbox
       const isEmployee = isEmployeeChecked || editingLead?.isEmployee || false;
       leadData.isEmployee = isEmployee;
       if (isEmployee) {
         const employeeName = getStringOrUndefined(nativeFormData.get('employeeName'));
         if (employeeName) leadData.employeeName = employeeName;
-        
+
         const employeePosition = getStringOrUndefined(nativeFormData.get('employeePosition'));
         if (employeePosition) leadData.employeePosition = employeePosition;
       }
-      
+
       // Handle assigned employee from formData
       if (formData.assignedTo) {
         leadData.assignedTo = formData.assignedTo;
@@ -511,14 +543,14 @@ const RecruitmentLeads = () => {
           updatedBy: user.id,
           updatedByName: user.name || 'Unknown',
         };
-        
+
         Object.keys(leadData).forEach(key => {
           const value = leadData[key];
           if (value !== undefined && value !== null && value !== '') {
             updateData[key] = value;
           }
         });
-        
+
         await updateRecruitmentLead(editingLead.id, updateData);
         leadId = editingLead.id;
         toast({
@@ -542,7 +574,7 @@ const RecruitmentLeads = () => {
       setRemarks(['']);
       setTasks(['']);
       setMeetingDate(undefined);
-      
+
       // Refresh analytics
       const analyticsData = await getRecruitmentLeadsAnalytics();
       setAnalytics(analyticsData);
@@ -568,7 +600,7 @@ const RecruitmentLeads = () => {
       tags: lead.tags,
     });
     setIsEmployeeChecked(lead.isEmployee || false);
-    
+
     // Parse businessOwnerManager to extract type and name
     const ownerManagerValue = lead.businessOwnerManager || '';
     if (ownerManagerValue.startsWith('Owner:')) {
@@ -578,7 +610,7 @@ const RecruitmentLeads = () => {
     } else {
       setOwnerManagerType('Manager');
     }
-    
+
     // Parse remarks array
     if (lead.remarks) {
       const remarksArray = lead.remarks.split('\n---\n').filter(r => r.trim() !== '');
@@ -586,7 +618,7 @@ const RecruitmentLeads = () => {
     } else {
       setRemarks(['']);
     }
-    
+
     // Parse tasks array
     if (lead.tasks) {
       const tasksArray = lead.tasks.split('\n---\n').filter(t => t.trim() !== '');
@@ -594,10 +626,10 @@ const RecruitmentLeads = () => {
     } else {
       setTasks(['']);
     }
-    
+
     // Set meeting date
     setMeetingDate(lead.meetingScheduled);
-    
+
     setOpen(true);
   };
 
@@ -609,7 +641,7 @@ const RecruitmentLeads = () => {
         description: 'Lead deleted successfully',
       });
       setDeleteConfirm(null);
-      
+
       // Refresh analytics
       const analyticsData = await getRecruitmentLeadsAnalytics();
       setAnalytics(analyticsData);
@@ -630,19 +662,19 @@ const RecruitmentLeads = () => {
 
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus, previousStatus?: LeadStatus) => {
     if (!user) return;
-    
+
     try {
       await updateRecruitmentLead(leadId, {
         status: newStatus,
         updatedBy: user.id,
         updatedByName: user.name || 'Unknown',
       });
-      
+
       // Add activity log with previous status and timestamp
-      const statusChangeDescription = previousStatus 
+      const statusChangeDescription = previousStatus
         ? `Status changed from ${previousStatus} to ${newStatus}`
         : `Status changed to ${newStatus}`;
-      
+
       await addActivityLog(leadId, {
         type: 'status_change',
         description: statusChangeDescription,
@@ -653,7 +685,7 @@ const RecruitmentLeads = () => {
           newStatus,
         },
       });
-      
+
       toast({
         title: 'Success',
         description: 'Status updated',
@@ -685,6 +717,80 @@ const RecruitmentLeads = () => {
     }
   };
 
+
+
+  const handleConvertClick = (lead: RecruitmentLead) => {
+    // Split business name or owner name to first/last name guess
+    let firstName = '';
+    let lastName = '';
+
+    // Try to use Business Owner Name if available
+    const ownerName = lead.businessOwnerManager.replace(/^(Manager|Owner):\s*/, '').trim();
+    if (ownerName) {
+      const parts = ownerName.split(' ');
+      if (parts.length > 0) firstName = parts[0];
+      if (parts.length > 1) lastName = parts.slice(1).join(' ');
+    } else {
+      // Fallback to Business Name
+      firstName = lead.businessName;
+    }
+
+    setClientFormData({
+      firstName,
+      lastName,
+      email: lead.emailAddress || '',
+      phoneNumber: lead.contactNo || '',
+      suburb: lead.jobLocation || '',
+      postCode: '',
+      state: 'NSW',
+    });
+    setSelectedLead(lead);
+    setConvertToClientOpen(true);
+  };
+
+  const handleConvertSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedLead) return;
+
+    try {
+      await createClient({
+        ...clientFormData,
+        state: clientFormData.state as any,
+        servicesPurchased: [selectedLead.jobRole],
+        createdBy: user.id,
+        createdByName: user.name || 'Unknown',
+      });
+
+      // Update Lead Status to Converted
+      await handleStatusChange(selectedLead.id, 'Converted', selectedLead.status);
+
+      // Add activity log
+      await addActivityLog(selectedLead.id, {
+        type: 'status_change',
+        description: 'Lead converted to Client',
+        userId: user.id,
+        userName: user.name || 'Unknown',
+        metadata: {
+          oldStatus: selectedLead.status,
+          newStatus: 'Converted'
+        }
+      });
+
+      toast({
+        title: 'Success',
+        description: 'Lead converted to client successfully',
+      });
+      setConvertToClientOpen(false);
+    } catch (error) {
+      console.error('Error converting lead:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to convert lead',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const lead = leads.find(l => l.id === active.id);
@@ -711,13 +817,13 @@ const RecruitmentLeads = () => {
 
     const leadId = active.id as string;
     const lead = leads.find(l => l.id === leadId);
-    
+
     if (!lead) return;
 
     // Check if dropped on a column
     if (over.data.current?.type === 'column') {
       const newStatus = over.data.current.status as LeadStatus;
-      
+
       // If status hasn't changed, do nothing
       if (lead.status === newStatus) return;
 
@@ -735,7 +841,7 @@ const RecruitmentLeads = () => {
   };
 
   const filteredLeads = leads.filter(lead => {
-    const matchesSearch = !searchQuery || 
+    const matchesSearch = !searchQuery ||
       lead.leadId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.businessOwnerManager.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -743,7 +849,7 @@ const RecruitmentLeads = () => {
       lead.contactNo.includes(searchQuery) ||
       lead.emailAddress?.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesFilters = 
+    const matchesFilters =
       (!filters.status || lead.status === filters.status) &&
       (!filters.platform || lead.platform === filters.platform) &&
       (!filters.priority || lead.priority === filters.priority) &&
@@ -771,7 +877,7 @@ const RecruitmentLeads = () => {
     // Use createdAt if available, otherwise use dateOfRecording
     const dateA = a.createdAt?.getTime() || new Date(a.dateOfRecording).getTime();
     const dateB = b.createdAt?.getTime() || new Date(b.dateOfRecording).getTime();
-    
+
     if (sortOrder === 'latest') {
       return dateB - dateA; // Latest first (descending)
     } else {
@@ -809,7 +915,7 @@ const RecruitmentLeads = () => {
       'Lead ID', 'Date', 'Platform', 'Business Name', 'Job Location', 'Requested Service',
       'Business Owner/Manager', 'Contact No', 'Email', 'Status', 'Priority'
     ];
-    
+
     const rows = filteredLeads.map(lead => [
       lead.leadId,
       format(lead.dateOfRecording, 'yyyy-MM-dd'),
@@ -823,12 +929,12 @@ const RecruitmentLeads = () => {
       lead.status,
       lead.priority,
     ]);
-    
+
     const csvContent = [
       headers.join(','),
       ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
     ].join('\n');
-    
+
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -836,7 +942,7 @@ const RecruitmentLeads = () => {
     a.download = `recruitment-leads-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    
+
     toast({
       title: 'Success',
       description: 'Leads exported to CSV',
@@ -882,9 +988,9 @@ const RecruitmentLeads = () => {
           <div className="flex gap-3">
             {canEdit && (
               <>
-                <Button 
-                  variant="outline" 
-                  onClick={exportToCSV} 
+                <Button
+                  variant="outline"
+                  onClick={exportToCSV}
                   className="shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-background/80 backdrop-blur-sm"
                 >
                   <Download className="h-4 w-4 mr-2" />
@@ -903,7 +1009,7 @@ const RecruitmentLeads = () => {
                   }
                 }}>
                   <DialogTrigger asChild>
-                    <Button 
+                    <Button
                       onClick={() => {
                         setEditingLead(null);
                         setFormData({});
@@ -912,319 +1018,319 @@ const RecruitmentLeads = () => {
                         setRemarks(['']);
                         setTasks(['']);
                         setMeetingDate(undefined);
-                      }} 
+                      }}
                       className="shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 bg-gradient-to-r from-primary via-primary to-blue-600 hover:from-primary/90 hover:via-primary/90 hover:to-blue-500 text-white font-semibold"
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       Add Lead
                     </Button>
                   </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
-                  <DialogHeader>
-                    <DialogTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</DialogTitle>
-                    <DialogDescription>
-                      {editingLead ? 'Update lead information' : 'Enter recruitment lead details'}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="dateOfRecording">Date of Recording *</Label>
-                        <Input 
-                          id="dateOfRecording" 
-                          name="dateOfRecording" 
-                          type="date" 
-                          defaultValue={editingLead ? format(editingLead.dateOfRecording, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')} 
-                          required 
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="platform">Platform *</Label>
-                        <Select 
-                          value={formData.platform || editingLead?.platform || ''} 
-                          onValueChange={(value) => setFormData({ ...formData, platform: value as Platform })}
-                          required
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select platform" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PLATFORMS.map((platform) => (
-                              <SelectItem key={platform} value={platform}>{platform}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="link">Link</Label>
-                        <Input id="link" name="link" type="url" placeholder="https://..." defaultValue={editingLead?.link || ''} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="businessName">Business Name *</Label>
-                        <Input id="businessName" name="businessName" placeholder="Business name" defaultValue={editingLead?.businessName || ''} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="jobLocation">Job Location *</Label>
-                        <Input id="jobLocation" name="jobLocation" placeholder="Location" defaultValue={editingLead?.jobLocation || ''} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="jobRole">Requested Service *</Label>
-                        <Select 
-                          value={formData.jobRole || editingLead?.jobRole || ''} 
-                          onValueChange={(value) => setFormData({ ...formData, jobRole: value as JobRole })}
-                          required
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select requested service" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {REQUESTED_SERVICES.map((service) => (
-                              <SelectItem key={service} value={service}>{service}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label htmlFor="businessOwnerManager">Business Owner / Manager *</Label>
-                        <div className="flex gap-2">
-                          <Select 
-                            value={ownerManagerType} 
-                            onValueChange={(value) => setOwnerManagerType(value as 'Manager' | 'Owner')}
+                  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+                    <DialogHeader>
+                      <DialogTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</DialogTitle>
+                      <DialogDescription>
+                        {editingLead ? 'Update lead information' : 'Enter recruitment lead details'}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="dateOfRecording">Date of Recording *</Label>
+                          <Input
+                            id="dateOfRecording"
+                            name="dateOfRecording"
+                            type="date"
+                            defaultValue={editingLead ? format(editingLead.dateOfRecording, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="platform">Platform *</Label>
+                          <Select
+                            value={formData.platform || editingLead?.platform || ''}
+                            onValueChange={(value) => setFormData({ ...formData, platform: value as Platform })}
+                            required
                           >
-                            <SelectTrigger className="w-[140px]">
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select platform" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PLATFORMS.map((platform) => (
+                                <SelectItem key={platform} value={platform}>{platform}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="link">Link</Label>
+                          <Input id="link" name="link" type="url" placeholder="https://..." defaultValue={editingLead?.link || ''} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="businessName">Business Name *</Label>
+                          <Input id="businessName" name="businessName" placeholder="Business name" defaultValue={editingLead?.businessName || ''} required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="jobLocation">Job Location *</Label>
+                          <Input id="jobLocation" name="jobLocation" placeholder="Location" defaultValue={editingLead?.jobLocation || ''} required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="jobRole">Requested Service *</Label>
+                          <Select
+                            value={formData.jobRole || editingLead?.jobRole || ''}
+                            onValueChange={(value) => setFormData({ ...formData, jobRole: value as JobRole })}
+                            required
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select requested service" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {REQUESTED_SERVICES.map((service) => (
+                                <SelectItem key={service} value={service}>{service}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2 col-span-2">
+                          <Label htmlFor="businessOwnerManager">Business Owner / Manager *</Label>
+                          <div className="flex gap-2">
+                            <Select
+                              value={ownerManagerType}
+                              onValueChange={(value) => setOwnerManagerType(value as 'Manager' | 'Owner')}
+                            >
+                              <SelectTrigger className="w-[140px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Manager">Manager</SelectItem>
+                                <SelectItem value="Owner">Owner</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              id="businessOwnerManager"
+                              name="businessOwnerManager"
+                              placeholder="Name"
+                              defaultValue={
+                                editingLead?.businessOwnerManager
+                                  ? editingLead.businessOwnerManager.replace(/^(Manager|Owner):\s*/, '')
+                                  : ''
+                              }
+                              className="flex-1"
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2 col-span-2">
+                          <div className="flex items-center space-x-2 p-4 border-2 rounded-lg">
+                            <Checkbox
+                              id="isEmployee"
+                              checked={isEmployeeChecked || editingLead?.isEmployee || false}
+                              onCheckedChange={(checked) => setIsEmployeeChecked(checked === true)}
+                            />
+                            <Label htmlFor="isEmployee" className="text-sm font-medium cursor-pointer">
+                              Employee
+                            </Label>
+                          </div>
+                          {(isEmployeeChecked || editingLead?.isEmployee) && (
+                            <div className="grid grid-cols-2 gap-4 mt-2">
+                              <div className="space-y-2">
+                                <Label htmlFor="employeeName">Employee Name *</Label>
+                                <Input
+                                  id="employeeName"
+                                  name="employeeName"
+                                  placeholder="Employee name"
+                                  defaultValue={editingLead?.employeeName || ''}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="employeePosition">Employee Position *</Label>
+                                <Input
+                                  id="employeePosition"
+                                  name="employeePosition"
+                                  placeholder="Employee position"
+                                  defaultValue={editingLead?.employeePosition || ''}
+                                  required
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="contactNo">Contact No. *</Label>
+                          <Input id="contactNo" name="contactNo" placeholder="Phone number" defaultValue={editingLead?.contactNo || ''} required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="emailAddress">Email Address</Label>
+                          <Input id="emailAddress" name="emailAddress" type="email" placeholder="email@example.com" defaultValue={editingLead?.emailAddress || ''} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="status">Status</Label>
+                          <Select
+                            value={formData.status || editingLead?.status || 'New'}
+                            onValueChange={(value) => setFormData({ ...formData, status: value as LeadStatus })}
+                          >
+                            <SelectTrigger>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Manager">Manager</SelectItem>
-                              <SelectItem value="Owner">Owner</SelectItem>
+                              {STATUSES.map((status) => (
+                                <SelectItem key={status} value={status}>{status}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
-                          <Input 
-                            id="businessOwnerManager" 
-                            name="businessOwnerManager" 
-                            placeholder="Name" 
-                            defaultValue={
-                              editingLead?.businessOwnerManager 
-                                ? editingLead.businessOwnerManager.replace(/^(Manager|Owner):\s*/, '')
-                                : ''
-                            } 
-                            className="flex-1"
-                            required 
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="priority">Priority</Label>
+                          <Select
+                            value={formData.priority || editingLead?.priority || 'Medium'}
+                            onValueChange={(value) => setFormData({ ...formData, priority: value as LeadPriority })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PRIORITIES.map((priority) => (
+                                <SelectItem key={priority} value={priority}>{priority}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="meetingDate">Meeting Date</Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-start text-left font-normal"
+                              >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {meetingDate ? format(meetingDate, 'PPP') : 'Select meeting date'}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={meetingDate}
+                                onSelect={setMeetingDate}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <div className="space-y-2 col-span-2">
+                          <Label htmlFor="callNotes">Call Notes *</Label>
+                          <Textarea
+                            id="callNotes"
+                            name="callNotes"
+                            placeholder="Enter call notes and conversation details..."
+                            defaultValue={editingLead?.callNotes || ''}
+                            rows={6}
+                            required
                           />
                         </div>
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <div className="flex items-center space-x-2 p-4 border-2 rounded-lg">
-                          <Checkbox 
-                            id="isEmployee" 
-                            checked={isEmployeeChecked || editingLead?.isEmployee || false}
-                            onCheckedChange={(checked) => setIsEmployeeChecked(checked === true)}
+                        <div className="space-y-2 col-span-2">
+                          <Label htmlFor="recap">Recap</Label>
+                          <Textarea
+                            id="recap"
+                            name="recap"
+                            placeholder="Enter recap details..."
+                            defaultValue={editingLead?.recap || ''}
+                            rows={4}
                           />
-                          <Label htmlFor="isEmployee" className="text-sm font-medium cursor-pointer">
-                            Employee
-                          </Label>
                         </div>
-                        {(isEmployeeChecked || editingLead?.isEmployee) && (
-                          <div className="grid grid-cols-2 gap-4 mt-2">
-                            <div className="space-y-2">
-                              <Label htmlFor="employeeName">Employee Name *</Label>
-                              <Input 
-                                id="employeeName" 
-                                name="employeeName" 
-                                placeholder="Employee name" 
-                                defaultValue={editingLead?.employeeName || ''} 
-                                required
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="employeePosition">Employee Position *</Label>
-                              <Input 
-                                id="employeePosition" 
-                                name="employeePosition" 
-                                placeholder="Employee position" 
-                                defaultValue={editingLead?.employeePosition || ''} 
-                                required
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="contactNo">Contact No. *</Label>
-                        <Input id="contactNo" name="contactNo" placeholder="Phone number" defaultValue={editingLead?.contactNo || ''} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="emailAddress">Email Address</Label>
-                        <Input id="emailAddress" name="emailAddress" type="email" placeholder="email@example.com" defaultValue={editingLead?.emailAddress || ''} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="status">Status</Label>
-                        <Select 
-                          value={formData.status || editingLead?.status || 'New'} 
-                          onValueChange={(value) => setFormData({ ...formData, status: value as LeadStatus })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {STATUSES.map((status) => (
-                              <SelectItem key={status} value={status}>{status}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="priority">Priority</Label>
-                        <Select 
-                          value={formData.priority || editingLead?.priority || 'Medium'} 
-                          onValueChange={(value) => setFormData({ ...formData, priority: value as LeadPriority })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PRIORITIES.map((priority) => (
-                              <SelectItem key={priority} value={priority}>{priority}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="meetingDate">Meeting Date</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
+                        <div className="space-y-2 col-span-2">
+                          <div className="flex flex-nowrap items-center justify-between gap-2 w-full">
+                            <Label htmlFor="tasks" className="text-sm font-medium whitespace-nowrap m-0">Tasks</Label>
                             <Button
+                              type="button"
                               variant="outline"
-                              className="w-full justify-start text-left font-normal"
+                              size="sm"
+                              onClick={() => setTasks([...tasks, ''])}
+                              className="whitespace-nowrap ml-auto"
                             >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {meetingDate ? format(meetingDate, 'PPP') : 'Select meeting date'}
+                              <Plus className="h-4 w-4 mr-1" />
+                              Add Task
                             </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                              mode="single"
-                              selected={meetingDate}
-                              onSelect={setMeetingDate}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label htmlFor="callNotes">Call Notes *</Label>
-                        <Textarea 
-                          id="callNotes" 
-                          name="callNotes" 
-                          placeholder="Enter call notes and conversation details..." 
-                          defaultValue={editingLead?.callNotes || ''} 
-                          rows={6}
-                          required 
-                        />
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label htmlFor="recap">Recap</Label>
-                        <Textarea 
-                          id="recap" 
-                          name="recap" 
-                          placeholder="Enter recap details..." 
-                          defaultValue={editingLead?.recap || ''} 
-                          rows={4}
-                        />
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <div className="flex flex-nowrap items-center justify-between gap-2 w-full">
-                          <Label htmlFor="tasks" className="text-sm font-medium whitespace-nowrap m-0">Tasks</Label>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setTasks([...tasks, ''])}
-                            className="whitespace-nowrap ml-auto"
-                          >
-                            <Plus className="h-4 w-4 mr-1" />
-                            Add Task
-                          </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {tasks.map((task, index) => (
+                              <div key={index} className="flex gap-2">
+                                <Textarea
+                                  placeholder="Enter task..."
+                                  value={task}
+                                  onChange={(e) => {
+                                    const newTasks = [...tasks];
+                                    newTasks[index] = e.target.value;
+                                    setTasks(newTasks);
+                                  }}
+                                  rows={2}
+                                  className="flex-1"
+                                />
+                                {tasks.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setTasks(tasks.filter((_, i) => i !== index))}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          {tasks.map((task, index) => (
-                            <div key={index} className="flex gap-2">
-                              <Textarea 
-                                placeholder="Enter task..." 
-                                value={task}
-                                onChange={(e) => {
-                                  const newTasks = [...tasks];
-                                  newTasks[index] = e.target.value;
-                                  setTasks(newTasks);
-                                }}
-                                rows={2}
-                                className="flex-1"
-                              />
-                              {tasks.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => setTasks(tasks.filter((_, i) => i !== index))}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          ))}
+                        <div className="space-y-2 col-span-2">
+                          <div className="flex flex-nowrap items-center justify-between gap-2 w-full">
+                            <Label htmlFor="remarks" className="text-sm font-medium whitespace-nowrap m-0">Remarks</Label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setRemarks([...remarks, ''])}
+                              className="whitespace-nowrap ml-auto"
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Add Remark
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {remarks.map((remark, index) => (
+                              <div key={index} className="flex gap-2">
+                                <Textarea
+                                  placeholder="Enter remark..."
+                                  value={remark}
+                                  onChange={(e) => {
+                                    const newRemarks = [...remarks];
+                                    newRemarks[index] = e.target.value;
+                                    setRemarks(newRemarks);
+                                  }}
+                                  rows={2}
+                                  className="flex-1"
+                                />
+                                {remarks.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setRemarks(remarks.filter((_, i) => i !== index))}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      <div className="space-y-2 col-span-2">
-                        <div className="flex flex-nowrap items-center justify-between gap-2 w-full">
-                          <Label htmlFor="remarks" className="text-sm font-medium whitespace-nowrap m-0">Remarks</Label>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setRemarks([...remarks, ''])}
-                            className="whitespace-nowrap ml-auto"
-                          >
-                            <Plus className="h-4 w-4 mr-1" />
-                            Add Remark
-                          </Button>
-                        </div>
-                        <div className="space-y-2">
-                          {remarks.map((remark, index) => (
-                            <div key={index} className="flex gap-2">
-                              <Textarea 
-                                placeholder="Enter remark..." 
-                                value={remark}
-                                onChange={(e) => {
-                                  const newRemarks = [...remarks];
-                                  newRemarks[index] = e.target.value;
-                                  setRemarks(newRemarks);
-                                }}
-                                rows={2}
-                                className="flex-1"
-                              />
-                              {remarks.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => setRemarks(remarks.filter((_, i) => i !== index))}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <Button type="submit" className="w-full">{editingLead ? 'Update Lead' : 'Add Lead'}</Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </>
-          )}
+                      <Button type="submit" className="w-full">{editingLead ? 'Update Lead' : 'Add Lead'}</Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </>
+            )}
+          </div>
         </div>
-      </div>
       </div>
 
       {/* Analytics Cards */}
@@ -1329,6 +1435,9 @@ const RecruitmentLeads = () => {
         </div>
       )}
 
+      {/* Leads Conversion Chart */}
+      <LeadsConversionChart leads={leads} />
+
       {/* Filters */}
       <Card className="border-2 border-primary/10 shadow-xl bg-gradient-to-br from-card via-card to-card/50 backdrop-blur-sm relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-blue-500 to-purple-500" />
@@ -1344,10 +1453,10 @@ const RecruitmentLeads = () => {
               </CardDescription>
             </div>
             {hasActiveFilters && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={clearFilters} 
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
                 className="text-destructive hover:text-destructive hover:bg-destructive/10 transition-all duration-200"
               >
                 <X className="h-4 w-4 mr-1" />
@@ -1507,11 +1616,10 @@ const RecruitmentLeads = () => {
                     variant={viewMode === 'table' ? 'default' : 'ghost'}
                     size="sm"
                     onClick={() => setViewMode('table')}
-                    className={`flex-1 font-semibold transition-all duration-300 ${
-                      viewMode === 'table' 
-                        ? 'shadow-lg bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-500' 
-                        : 'hover:bg-primary/10'
-                    }`}
+                    className={`flex-1 font-semibold transition-all duration-300 ${viewMode === 'table'
+                      ? 'shadow-lg bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-500'
+                      : 'hover:bg-primary/10'
+                      }`}
                   >
                     Table
                   </Button>
@@ -1519,11 +1627,10 @@ const RecruitmentLeads = () => {
                     variant={viewMode === 'kanban' ? 'default' : 'ghost'}
                     size="sm"
                     onClick={() => setViewMode('kanban')}
-                    className={`flex-1 font-semibold transition-all duration-300 ${
-                      viewMode === 'kanban' 
-                        ? 'shadow-lg bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-500' 
-                        : 'hover:bg-primary/10'
-                    }`}
+                    className={`flex-1 font-semibold transition-all duration-300 ${viewMode === 'kanban'
+                      ? 'shadow-lg bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-500'
+                      : 'hover:bg-primary/10'
+                      }`}
                   >
                     Kanban
                   </Button>
@@ -1577,8 +1684,8 @@ const RecruitmentLeads = () => {
                     </TableRow>
                   ) : (
                     paginatedLeads.map((lead, index) => (
-                      <TableRow 
-                        key={lead.id} 
+                      <TableRow
+                        key={lead.id}
                         className="group hover:bg-gradient-to-r hover:from-primary/5 hover:via-primary/5 hover:to-transparent transition-all duration-300 cursor-pointer border-b border-primary/5 hover:border-primary/20 hover:shadow-md"
                         onClick={() => handleView(lead)}
                         style={{ animationDelay: `${index * 50}ms` }}
@@ -1646,7 +1753,13 @@ const RecruitmentLeads = () => {
                                   <Edit className="h-4 w-4 mr-2" />
                                   Edit
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
+                                {lead.status !== 'Converted' && (
+                                  <DropdownMenuItem onClick={() => handleConvertClick(lead)} className="cursor-pointer">
+                                    <UserCheck className="h-4 w-4 mr-2" />
+                                    Convert to Client
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
                                   onClick={() => setDeleteConfirm(lead.id)}
                                   className="text-destructive focus:text-destructive cursor-pointer"
                                 >
@@ -1662,7 +1775,7 @@ const RecruitmentLeads = () => {
                   )}
                 </TableBody>
               </Table>
-              
+
               {/* Pagination Controls */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-6 pt-6 border-t border-primary/20">
@@ -1691,18 +1804,17 @@ const RecruitmentLeads = () => {
                         } else {
                           pageNum = currentPage - 4 + i;
                         }
-                        
+
                         return (
                           <Button
                             key={pageNum}
                             variant={currentPage === pageNum ? 'default' : 'outline'}
                             size="sm"
                             onClick={() => setCurrentPage(pageNum)}
-                            className={`min-w-[2.5rem] border-2 transition-all ${
-                              currentPage === pageNum
-                                ? 'bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-500 border-primary shadow-lg'
-                                : 'border-primary/20 hover:border-primary/50'
-                            }`}
+                            className={`min-w-[2.5rem] border-2 transition-all ${currentPage === pageNum
+                              ? 'bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-500 border-primary shadow-lg'
+                              : 'border-primary/20 hover:border-primary/50'
+                              }`}
                           >
                             {pageNum}
                           </Button>
@@ -1755,6 +1867,7 @@ const RecruitmentLeads = () => {
                             onView={handleView}
                             onEdit={handleEdit}
                             onDelete={setDeleteConfirm}
+                            onConvert={handleConvertClick}
                             canEdit={canEdit}
                           />
                         ))}
@@ -1820,8 +1933,22 @@ const RecruitmentLeads = () => {
                     </div>
                     {canEdit && (
                       <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
+                        {selectedLead.status !== 'Converted' && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              setViewDialogOpen(false);
+                              handleConvertClick(selectedLead);
+                            }}
+                            className="shadow-sm hover:shadow-md transition-all bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <UserCheck className="h-4 w-4 mr-2" />
+                            Convert
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => {
                             setViewDialogOpen(false);
@@ -1964,10 +2091,10 @@ const RecruitmentLeads = () => {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <Label className="text-xs text-muted-foreground">Source Link</Label>
-                                <a 
-                                  href={selectedLead.link} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
+                                <a
+                                  href={selectedLead.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="text-sm font-medium text-primary hover:underline flex items-center gap-1.5"
                                 >
                                   <span className="truncate">{selectedLead.link}</span>
@@ -2057,7 +2184,7 @@ const RecruitmentLeads = () => {
                     {/* Action Buttons */}
                     {canEdit && (
                       <div className="flex items-center justify-between gap-4 pt-4 border-t">
-                        <Button 
+                        <Button
                           onClick={() => {
                             setViewDialogOpen(false);
                             handleEdit(selectedLead);
@@ -2109,14 +2236,13 @@ const RecruitmentLeads = () => {
                                 <CardContent className="p-4">
                                   <div className="flex gap-4">
                                     <div className="flex-shrink-0">
-                                      <div className={`p-2.5 rounded-lg ${
-                                        activity.type === 'call' ? 'bg-blue-100 dark:bg-blue-900/30' :
+                                      <div className={`p-2.5 rounded-lg ${activity.type === 'call' ? 'bg-blue-100 dark:bg-blue-900/30' :
                                         activity.type === 'email' ? 'bg-green-100 dark:bg-green-900/30' :
-                                        activity.type === 'meeting' ? 'bg-purple-100 dark:bg-purple-900/30' :
-                                        activity.type === 'status_change' ? 'bg-orange-100 dark:bg-orange-900/30' :
-                                        activity.type === 'follow_up' ? 'bg-pink-100 dark:bg-pink-900/30' :
-                                        'bg-gray-100 dark:bg-gray-900/30'
-                                      }`}>
+                                          activity.type === 'meeting' ? 'bg-purple-100 dark:bg-purple-900/30' :
+                                            activity.type === 'status_change' ? 'bg-orange-100 dark:bg-orange-900/30' :
+                                              activity.type === 'follow_up' ? 'bg-pink-100 dark:bg-pink-900/30' :
+                                                'bg-gray-100 dark:bg-gray-900/30'
+                                        }`}>
                                         {activity.type === 'call' && <Phone className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
                                         {activity.type === 'email' && <Mail className="h-5 w-5 text-green-600 dark:text-green-400" />}
                                         {activity.type === 'meeting' && <CalendarIcon className="h-5 w-5 text-purple-600 dark:text-purple-400" />}
@@ -2160,26 +2286,24 @@ const RecruitmentLeads = () => {
                           .map((followUp) => {
                             const isOverdue = !followUp.completed && followUp.dueDate < new Date();
                             const isUpcoming = !followUp.completed && followUp.dueDate >= new Date() && followUp.dueDate <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-                            
+
                             return (
-                              <Card 
-                                key={followUp.id} 
-                                className={`border-2 transition-all hover:shadow-md ${
-                                  isOverdue ? 'border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20' :
+                              <Card
+                                key={followUp.id}
+                                className={`border-2 transition-all hover:shadow-md ${isOverdue ? 'border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20' :
                                   isUpcoming ? 'border-orange-200 dark:border-orange-900/50 bg-orange-50/50 dark:bg-orange-950/20' :
-                                  followUp.completed ? 'border-green-200 dark:border-green-900/50 bg-green-50/50 dark:bg-green-950/20' :
-                                  'border-border/50'
-                                }`}
+                                    followUp.completed ? 'border-green-200 dark:border-green-900/50 bg-green-50/50 dark:bg-green-950/20' :
+                                      'border-border/50'
+                                  }`}
                               >
                                 <CardContent className="p-4">
                                   <div className="flex items-start justify-between gap-4">
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-2 mb-2">
-                                        <CheckSquare className={`h-4 w-4 ${
-                                          followUp.completed ? 'text-green-600 dark:text-green-400' :
+                                        <CheckSquare className={`h-4 w-4 ${followUp.completed ? 'text-green-600 dark:text-green-400' :
                                           isOverdue ? 'text-red-600 dark:text-red-400' :
-                                          'text-muted-foreground'
-                                        }`} />
+                                            'text-muted-foreground'
+                                          }`} />
                                         <p className="text-sm font-semibold">{followUp.description}</p>
                                       </div>
                                       <div className="flex items-center gap-3 text-xs text-muted-foreground ml-6">
@@ -2226,6 +2350,103 @@ const RecruitmentLeads = () => {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Convert to Client Dialog */}
+      <Dialog open={convertToClientOpen} onOpenChange={setConvertToClientOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Convert to Client</DialogTitle>
+            <DialogDescription>
+              Create a new Client record from this Lead.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleConvertSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  value={clientFormData.firstName}
+                  onChange={(e) => setClientFormData({ ...clientFormData, firstName: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  value={clientFormData.lastName}
+                  onChange={(e) => setClientFormData({ ...clientFormData, lastName: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={clientFormData.email}
+                onChange={(e) => setClientFormData({ ...clientFormData, email: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone Number</Label>
+              <Input
+                id="phone"
+                value={clientFormData.phoneNumber}
+                onChange={(e) => setClientFormData({ ...clientFormData, phoneNumber: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="suburb">Suburb</Label>
+                <Input
+                  id="suburb"
+                  value={clientFormData.suburb}
+                  onChange={(e) => setClientFormData({ ...clientFormData, suburb: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="postCode">Post Code</Label>
+                <Input
+                  id="postCode"
+                  value={clientFormData.postCode}
+                  onChange={(e) => setClientFormData({ ...clientFormData, postCode: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="state">State</Label>
+              <Select
+                value={clientFormData.state}
+                onValueChange={(value) => setClientFormData({ ...clientFormData, state: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select state" />
+                </SelectTrigger>
+                <SelectContent>
+                  {['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'].map((state) => (
+                    <SelectItem key={state} value={state}>{state}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="pt-4 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setConvertToClientOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                Convert & Create Client
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 
