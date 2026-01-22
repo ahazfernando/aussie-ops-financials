@@ -1,14 +1,14 @@
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  getDocs, 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  getDocs,
   getDoc,
-  query, 
-  where, 
-  orderBy, 
-  Timestamp, 
+  query,
+  where,
+  orderBy,
+  Timestamp,
   deleteDoc,
   onSnapshot,
   limit,
@@ -16,9 +16,9 @@ import {
   QueryDocumentSnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { 
-  RecruitmentLead, 
-  FirestoreRecruitmentLead, 
+import {
+  RecruitmentLead,
+  FirestoreRecruitmentLead,
   LeadStatus,
   LeadPriority,
   Platform,
@@ -109,16 +109,16 @@ export function convertFirestoreRecruitmentLead(docData: any, docId: string): Re
  */
 export function calculateLeadScore(lead: Partial<RecruitmentLead>): number {
   let score = 0;
-  
+
   // Priority weight (0-30 points)
   const priorityScores = { Urgent: 30, High: 20, Medium: 10, Low: 5 };
   score += priorityScores[lead.priority || 'Medium'];
-  
+
   // Status weight (0-25 points)
-  const statusScores = { 
-    'Meeting Scheduled': 25, 
-    'Qualified': 20, 
-    'Contacted': 15, 
+  const statusScores = {
+    'Meeting Scheduled': 25,
+    'Qualified': 20,
+    'Contacted': 15,
     'Follow-up Required': 10,
     'New': 5,
     'On Hold': 0,
@@ -126,23 +126,23 @@ export function calculateLeadScore(lead: Partial<RecruitmentLead>): number {
     'Lost': 0
   };
   score += statusScores[lead.status || 'New'];
-  
+
   // Contact information completeness (0-15 points)
   if (lead.emailAddress) score += 5;
   if (lead.contactNo) score += 5;
   if (lead.link) score += 5;
-  
+
   // Activity level (0-15 points)
   const activityCount = lead.activityLog?.length || 0;
   score += Math.min(activityCount * 2, 15);
-  
+
   // Follow-ups scheduled (0-10 points)
   const activeFollowUps = lead.followUps?.filter(fu => !fu.completed).length || 0;
   score += Math.min(activeFollowUps * 3, 10);
-  
+
   // Meeting scheduled (0-5 points)
   if (lead.meetingScheduled) score += 5;
-  
+
   return Math.min(score, 100);
 }
 
@@ -153,7 +153,7 @@ async function generateLeadId(): Promise<string> {
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     const q = query(
       collection(db, 'recruitmentLeads'),
@@ -161,11 +161,11 @@ async function generateLeadId(): Promise<string> {
       limit(1)
     );
     const snapshot = await getDocs(q);
-    
+
     if (snapshot.empty) {
       return 'RL001';
     }
-    
+
     const lastLead = snapshot.docs[0].data();
     const lastId = lastLead.leadId || 'RL000';
     const lastNumber = parseInt(lastId.replace('RL', '')) || 0;
@@ -210,11 +210,11 @@ export async function createRecruitmentLead(leadData: {
   if (!db) {
     throw new Error('Firebase is not initialized. Please check your environment variables.');
   }
-  
+
   try {
     const now = Timestamp.now();
     const leadId = await generateLeadId();
-    
+
     // Build the lead object, only including fields that are not undefined
     const newLead: any = {
       leadId,
@@ -238,7 +238,7 @@ export async function createRecruitmentLead(leadData: {
       createdBy: leadData.createdBy,
       createdByName: leadData.createdByName,
     };
-    
+
     // Only include optional fields if they are defined
     if (leadData.link !== undefined && leadData.link !== null && leadData.link !== '') {
       newLead.link = leadData.link;
@@ -255,11 +255,11 @@ export async function createRecruitmentLead(leadData: {
     if (leadData.assignedToName !== undefined && leadData.assignedToName !== null && leadData.assignedToName !== '') {
       newLead.assignedToName = leadData.assignedToName;
     }
-    
+
     // Calculate initial lead score
     const tempLead = convertFirestoreRecruitmentLead(newLead, 'temp');
     newLead.leadScore = calculateLeadScore(tempLead);
-    
+
     const docRef = await addDoc(collection(db, 'recruitmentLeads'), newLead);
     return docRef.id;
   } catch (error) {
@@ -310,19 +310,19 @@ export async function updateRecruitmentLead(
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     const leadRef = doc(db, 'recruitmentLeads', leadId);
     const leadDoc = await getDoc(leadRef);
-    
+
     if (!leadDoc.exists()) {
       throw new Error('Lead not found');
     }
-    
+
     const updateData: any = {
       updatedAt: Timestamp.now(),
     };
-    
+
     // Convert dates to Firestore timestamps
     if (updates.dateOfRecording) {
       updateData.dateOfRecording = Timestamp.fromDate(updates.dateOfRecording);
@@ -333,7 +333,7 @@ export async function updateRecruitmentLead(
     if (updates.convertedAt) {
       updateData.convertedAt = Timestamp.fromDate(updates.convertedAt);
     }
-    
+
     // Copy other fields, filtering out undefined values
     Object.keys(updates).forEach(key => {
       if (key !== 'dateOfRecording' && key !== 'meetingScheduled' && key !== 'convertedAt') {
@@ -344,9 +344,9 @@ export async function updateRecruitmentLead(
         }
       }
     });
-    
+
     await updateDoc(leadRef, updateData);
-    
+
     // Recalculate lead score if relevant fields changed
     const currentLead = convertFirestoreRecruitmentLead(leadDoc.data(), leadId);
     const updatedLead = { ...currentLead, ...updates };
@@ -368,30 +368,32 @@ export async function addActivityLog(
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     const leadRef = doc(db, 'recruitmentLeads', leadId);
     const leadDoc = await getDoc(leadRef);
-    
+
     if (!leadDoc.exists()) {
       throw new Error('Lead not found');
     }
-    
+
     const currentData = leadDoc.data();
     const activityLog = currentData.activityLog || [];
-    
+
+    const metadata: any = activity.metadata ? { ...activity.metadata } : undefined;
+
+    // Convert meetingDate to Timestamp if present
+    if (metadata && metadata.meetingDate) {
+      metadata.meetingDate = Timestamp.fromDate(metadata.meetingDate);
+    }
+
     const newActivity = {
       id: Date.now().toString(),
       ...activity,
       timestamp: Timestamp.now(),
-      metadata: activity.metadata ? {
-        ...activity.metadata,
-        meetingDate: activity.metadata.meetingDate 
-          ? Timestamp.fromDate(activity.metadata.meetingDate)
-          : undefined,
-      } : undefined,
+      metadata,
     };
-    
+
     await updateDoc(leadRef, {
       activityLog: [...activityLog, newActivity],
       lastContactDate: Timestamp.now(),
@@ -413,35 +415,35 @@ export async function addFollowUp(
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     const leadRef = doc(db, 'recruitmentLeads', leadId);
     const leadDoc = await getDoc(leadRef);
-    
+
     if (!leadDoc.exists()) {
       throw new Error('Lead not found');
     }
-    
+
     const currentData = leadDoc.data();
     const followUps = currentData.followUps || [];
-    
+
     const newFollowUp = {
       id: Date.now().toString(),
       ...followUp,
       dueDate: Timestamp.fromDate(followUp.dueDate),
       completed: false,
     };
-    
+
     // Update next follow-up date if this is the earliest
     const allFollowUps = [...followUps, newFollowUp];
     const incompleteFollowUps = allFollowUps
       .filter(fu => !fu.completed)
       .map(fu => fu.dueDate?.toDate?.() || new Date(fu.dueDate))
       .sort((a, b) => a.getTime() - b.getTime());
-    
+
     await updateDoc(leadRef, {
       followUps: allFollowUps,
-      nextFollowUpDate: incompleteFollowUps.length > 0 
+      nextFollowUpDate: incompleteFollowUps.length > 0
         ? Timestamp.fromDate(incompleteFollowUps[0])
         : null,
       updatedAt: Timestamp.now(),
@@ -462,31 +464,31 @@ export async function completeFollowUp(
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     const leadRef = doc(db, 'recruitmentLeads', leadId);
     const leadDoc = await getDoc(leadRef);
-    
+
     if (!leadDoc.exists()) {
       throw new Error('Lead not found');
     }
-    
+
     const currentData = leadDoc.data();
-    const followUps = (currentData.followUps || []).map((fu: any) => 
+    const followUps = (currentData.followUps || []).map((fu: any) =>
       fu.id === followUpId
         ? { ...fu, completed: true, completedAt: Timestamp.now() }
         : fu
     );
-    
+
     // Recalculate next follow-up date
     const incompleteFollowUps = followUps
       .filter((fu: any) => !fu.completed)
       .map((fu: any) => fu.dueDate?.toDate?.() || new Date(fu.dueDate))
       .sort((a: Date, b: Date) => a.getTime() - b.getTime());
-    
+
     await updateDoc(leadRef, {
       followUps,
-      nextFollowUpDate: incompleteFollowUps.length > 0 
+      nextFollowUpDate: incompleteFollowUps.length > 0
         ? Timestamp.fromDate(incompleteFollowUps[0])
         : null,
       updatedAt: Timestamp.now(),
@@ -510,17 +512,17 @@ export async function getAllRecruitmentLeads(filters?: {
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     // Check if we have any filters that would require a composite index
     const hasFilters = filters?.status || filters?.platform || filters?.priority || filters?.assignedTo;
-    
+
     let q;
     if (hasFilters) {
       // When filters are applied, we can't use orderBy with where clauses without composite indexes
       // So we'll fetch and sort client-side
       q = query(collection(db, 'recruitmentLeads'));
-      
+
       if (filters?.status) {
         q = query(q, where('status', '==', filters.status));
       }
@@ -537,12 +539,12 @@ export async function getAllRecruitmentLeads(filters?: {
       // No filters, safe to use orderBy on leadId
       q = query(collection(db, 'recruitmentLeads'), orderBy('leadId', 'asc'));
     }
-    
+
     const snapshot = await getDocs(q);
-    let leads = snapshot.docs.map(doc => 
+    let leads = snapshot.docs.map(doc =>
       convertFirestoreRecruitmentLead(doc.data(), doc.id)
     );
-    
+
     // Sort client-side by leadId in ascending order (oldest first)
     // This ensures consistent sorting whether filters are applied or not
     leads.sort((a, b) => {
@@ -553,7 +555,7 @@ export async function getAllRecruitmentLeads(filters?: {
       };
       return getLeadNumber(a.leadId) - getLeadNumber(b.leadId);
     });
-    
+
     // Apply search filter if provided
     if (filters?.search) {
       const searchLower = filters.search.toLowerCase();
@@ -566,7 +568,7 @@ export async function getAllRecruitmentLeads(filters?: {
         lead.leadId.toLowerCase().includes(searchLower)
       );
     }
-    
+
     return leads;
   } catch (error) {
     console.error('Error fetching recruitment leads:', error);
@@ -581,15 +583,15 @@ export async function getRecruitmentLeadById(leadId: string): Promise<Recruitmen
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     const leadRef = doc(db, 'recruitmentLeads', leadId);
     const leadDoc = await getDoc(leadRef);
-    
+
     if (!leadDoc.exists()) {
       return null;
     }
-    
+
     return convertFirestoreRecruitmentLead(leadDoc.data(), leadDoc.id);
   } catch (error) {
     console.error('Error fetching recruitment lead:', error);
@@ -604,7 +606,7 @@ export async function deleteRecruitmentLead(leadId: string): Promise<void> {
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     await deleteDoc(doc(db, 'recruitmentLeads', leadId));
   } catch (error) {
@@ -620,47 +622,47 @@ export async function getRecruitmentLeadsAnalytics(): Promise<LeadAnalytics> {
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   try {
     const snapshot = await getDocs(collection(db, 'recruitmentLeads'));
-    const leads = snapshot.docs.map(doc => 
+    const leads = snapshot.docs.map(doc =>
       convertFirestoreRecruitmentLead(doc.data(), doc.id)
     );
-    
+
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - now.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
-    
+
     const byStatus: Record<string, number> = {};
     const byPlatform: Record<string, number> = {};
     const byPriority: Record<string, number> = {};
-    
+
     let totalScore = 0;
     let convertedCount = 0;
     let leadsThisMonth = 0;
     let leadsThisWeek = 0;
     let upcomingFollowUps = 0;
     let overdueFollowUps = 0;
-    
+
     leads.forEach(lead => {
       // Count by status
       byStatus[lead.status] = (byStatus[lead.status] || 0) + 1;
-      
+
       // Count by platform
       byPlatform[lead.platform] = (byPlatform[lead.platform] || 0) + 1;
-      
+
       // Count by priority
       byPriority[lead.priority] = (byPriority[lead.priority] || 0) + 1;
-      
+
       // Calculate metrics
       totalScore += lead.leadScore;
       if (lead.status === 'Converted') convertedCount++;
-      
+
       if (lead.createdAt >= startOfMonth) leadsThisMonth++;
       if (lead.createdAt >= startOfWeek) leadsThisWeek++;
-      
+
       // Count follow-ups
       lead.followUps.forEach(fu => {
         if (!fu.completed) {
@@ -672,7 +674,7 @@ export async function getRecruitmentLeadsAnalytics(): Promise<LeadAnalytics> {
         }
       });
     });
-    
+
     return {
       totalLeads: leads.length,
       byStatus: byStatus as any,
@@ -706,16 +708,16 @@ export function subscribeToRecruitmentLeads(
   if (!db) {
     throw new Error('Firebase is not initialized');
   }
-  
+
   // Check if we have any filters that would require a composite index
   const hasFilters = filters?.status || filters?.platform || filters?.priority || filters?.assignedTo;
-  
+
   let q;
   if (hasFilters) {
     // When filters are applied, we can't use orderBy with where clauses without composite indexes
     // So we'll fetch and sort client-side
     q = query(collection(db, 'recruitmentLeads'));
-    
+
     if (filters?.status) {
       q = query(q, where('status', '==', filters.status));
     }
@@ -732,12 +734,12 @@ export function subscribeToRecruitmentLeads(
     // No filters, safe to use orderBy on leadId
     q = query(collection(db, 'recruitmentLeads'), orderBy('leadId', 'asc'));
   }
-  
+
   const unsubscribe = onSnapshot(q, (snapshot) => {
-    let leads = snapshot.docs.map(doc => 
+    let leads = snapshot.docs.map(doc =>
       convertFirestoreRecruitmentLead(doc.data(), doc.id)
     );
-    
+
     // Sort client-side by leadId in ascending order (oldest first)
     // This ensures consistent sorting whether filters are applied or not
     leads.sort((a, b) => {
@@ -748,10 +750,10 @@ export function subscribeToRecruitmentLeads(
       };
       return getLeadNumber(a.leadId) - getLeadNumber(b.leadId);
     });
-    
+
     callback(leads);
   });
-  
+
   return unsubscribe;
 }
 
